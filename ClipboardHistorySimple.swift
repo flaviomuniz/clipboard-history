@@ -290,6 +290,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             popover?.performClose(nil)
         } else {
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+
+            if let popoverWindow = popover?.contentViewController?.view.window {
+                var frame = popoverWindow.frame
+
+                if let screen = NSScreen.main {
+                    let screenFrame = screen.visibleFrame
+
+                    if frame.maxY > screenFrame.maxY {
+                        frame.origin.y = screenFrame.maxY - frame.height
+                    }
+
+                    if frame.minY < screenFrame.minY {
+                        frame.origin.y = screenFrame.minY
+                    }
+
+                    popoverWindow.setFrame(frame, display: true)
+                }
+            }
+
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }

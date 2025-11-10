@@ -1,3 +1,5 @@
+
+![ClipboardHistory Icon](icon.jpeg)
 # ClipboardHistory
 
 An open-source clipboard history manager for macOS (Apple Silicon and Intel).
