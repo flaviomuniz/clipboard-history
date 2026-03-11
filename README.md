@@ -4,14 +4,6 @@
 
 An open-source, lightweight clipboard history manager for macOS (Apple Silicon and Intel).
 
-## Screenshots
-
-<p align="center">
-  <img src="images/history.png" width="280" alt="Clipboard History">
-  <img src="images/settings.png" width="280" alt="Settings">
-  <img src="images/about.png" width="280" alt="About">
-</p>
-
 ## Features
 
 - **Clipboard History** - Keeps a history of everything you copy (up to 200 items)
