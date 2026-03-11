@@ -2,16 +2,17 @@
 ![ClipboardHistory Icon](icon.jpeg)
 # ClipboardHistory
 
-An open-source clipboard history manager for macOS (Apple Silicon and Intel).
+An open-source, lightweight clipboard history manager for macOS (Apple Silicon and Intel).
 
 ## Features
 
-- 📋 **Clipboard History**: Keeps a history of everything you copy
-- 🔍 **Search**: Quickly find items in history
-- 🗑️ **Management**: Delete individual items or clear entire history
-- 🖼️ **Multi-type Support**: Text and images
-- 🚀 **Lightweight & Fast**: Optimized for performance
-- ❓ **Help & About**: Built-in documentation with GitHub links
+- **Clipboard History** - Keeps a history of everything you copy (up to 50 items)
+- **Search** - Quickly find items in history
+- **Persistent Storage** - History is saved to disk and survives app restarts
+- **Launch at Login** - Option to start automatically when you log in
+- **Menu Bar App** - Lives in your menu bar, out of the way
+- **Lightweight & Fast** - Single-file Swift app, minimal resource usage
+- **Privacy First** - All data stored locally, nothing sent anywhere
 
 ## Installation
 
@@ -37,82 +38,63 @@ chmod +x build.sh
 cp -r ClipboardHistory.app /Applications/
 ```
 
-## Configuration
-
-### Required Permissions
-
-On first launch, the app will request:
-
-1. **Accessibility**: To monitor clipboard and simulate keyboard shortcuts
-   - Go to System Preferences > Privacy & Security > Accessibility
-   - Add and authorize ClipboardHistory
-
 ## Usage
 
-1. **Copy**: Use Cmd+C normally to copy any content
-2. **Open History**: Click the clipboard icon in the menu bar
-3. **Paste**: Click any item to paste it immediately
-4. **Search**: Type in the search box to filter items
-5. **Delete**: Click the power button to quit the app
-6. **Help**: Click the question mark for app information
+1. **Copy** - Use Cmd+C normally to copy any content
+2. **Open History** - Click the clipboard icon in the menu bar
+3. **Paste** - Click "Copy" on any item to put it back on your clipboard
+4. **Search** - Type in the search box to filter items
+5. **Clear** - Click "Clear" to remove all history
+6. **Launch at Login** - Toggle the switch to start automatically on login
+
+## How It Works
+
+ClipboardHistory monitors your system clipboard every 0.5 seconds. When it detects a new text copy, it saves it to a local JSON file at `~/Library/Application Support/ClipboardHistory/history.json`. The history persists across app restarts and system reboots.
 
 ## Project Structure
 
 ```
 ClipboardHistory/
-├── ClipboardHistorySimple.swift    # Main app file
+├── ClipboardHistorySimple.swift    # Main app (single-file)
 ├── build.sh                        # Build script
-├── create_icon.swift              # Icon generation script
-├── ClipboardHistory.icns          # App icon
-└── README.md                      # This file
+├── create_icon.swift               # Icon generation script
+├── ClipboardHistory.icns           # App icon
+├── LICENSE                         # MIT License
+├── CONTRIBUTING.md                 # Contribution guidelines
+└── README.md                       # This file
 ```
 
 ## Privacy & Security
 
 - All data is stored locally on your Mac
-- No data is sent to third-party servers
-- Completely open-source code for auditing
+- No network requests, no analytics, no telemetry
+- Completely open-source for auditing
+- History stored at `~/Library/Application Support/ClipboardHistory/`
 
-## Development
+## Roadmap
 
-### Building
+- [ ] Global keyboard shortcut (e.g. `Cmd+Shift+V`) to open history
+- [ ] Screenshot / GIF demo in README
+- [ ] Image and rich text support
+- [ ] Keyboard navigation (arrow keys + Enter to paste)
+- [ ] Configurable history limit and expiration
+- [ ] Homebrew cask for easy installation
+- [ ] Code snippets support with syntax highlighting
+- [ ] Categories and tags for organization
 
-The app is built as a single Swift file for simplicity:
+## Contributing
 
-```bash
-./build.sh
-```
-
-This compiles `ClipboardHistorySimple.swift` into a complete macOS app bundle with:
-- Native SwiftUI interface
-- Menu bar integration
-- Custom app icon
-- Proper Info.plist configuration
-
-### Contributing
-
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/MyFeature`)
-3. Commit your changes (`git commit -m 'Add: new feature'`)
-4. Push to the branch (`git push origin feature/MyFeature`)
-5. Open a Pull Request
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-This project is open-source under the MIT License. See the LICENSE file for details.
+This project is open-source under the [MIT License](LICENSE).
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/flaviomuniz/clipboard-history/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/flaviomuniz/clipboard-history/discussions)
 
-## Roadmap
-
-- [ ] Code snippets support with syntax highlighting
-- [ ] Categories and tags for organization
-- [ ] Customizable shortcuts for specific actions
-- [ ] Configurable history expiration
-
 ## Credits
 
-Developed by @flaviomuniz
+Developed by [@flaviomuniz](https://github.com/flaviomuniz)
