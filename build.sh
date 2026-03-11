@@ -7,6 +7,7 @@ swiftc ClipboardHistorySimple.swift \
     -o ClipboardHistory \
     -framework SwiftUI \
     -framework AppKit \
+    -framework ServiceManagement \
     -O
 
 # Create app bundle

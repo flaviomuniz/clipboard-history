@@ -2,12 +2,19 @@
 
 import Cocoa
 import SwiftUI
+import ServiceManagement
 
 // MARK: - Clipboard Item Model
-struct ClipboardItem: Identifiable {
-    let id = UUID()
+struct ClipboardItem: Identifiable, Codable {
+    let id: UUID
     let content: String
     let timestamp: Date
+
+    init(content: String, timestamp: Date) {
+        self.id = UUID()
+        self.content = content
+        self.timestamp = timestamp
+    }
 
     var displayText: String {
         String(content.prefix(100))
@@ -20,13 +27,49 @@ struct ClipboardItem: Identifiable {
     }
 }
 
+// MARK: - Persistence
+struct PersistenceManager {
+    private static var storageURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appDir = appSupport.appendingPathComponent("ClipboardHistory")
+        if !FileManager.default.fileExists(atPath: appDir.path) {
+            try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+        }
+        return appDir.appendingPathComponent("history.json")
+    }
+
+    static func save(_ items: [ClipboardItem]) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(items) else { return }
+        try? data.write(to: storageURL, options: .atomic)
+    }
+
+    static func load() -> [ClipboardItem] {
+        guard let data = try? Data(contentsOf: storageURL) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([ClipboardItem].self, from: data)) ?? []
+    }
+}
+
 // MARK: - Clipboard Manager
 class ClipboardManager: ObservableObject {
     @Published var items: [ClipboardItem] = []
+    @Published var historyLimit: Int {
+        didSet { UserDefaults.standard.set(historyLimit, forKey: "historyLimit") }
+    }
     private var timer: Timer?
     private var lastChangeCount = 0
 
+    init() {
+        let saved = UserDefaults.standard.integer(forKey: "historyLimit")
+        self.historyLimit = saved > 0 ? saved : 50
+        self.items = PersistenceManager.load()
+    }
+
     func startMonitoring() {
+        lastChangeCount = NSPasteboard.general.changeCount
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             self.checkClipboard()
         }
@@ -44,9 +87,10 @@ class ClipboardManager: ObservableObject {
             DispatchQueue.main.async {
                 self.items.removeAll { $0.content == item.content }
                 self.items.insert(item, at: 0)
-                if self.items.count > 50 {
-                    self.items = Array(self.items.prefix(50))
+                if self.items.count > self.historyLimit {
+                    self.items = Array(self.items.prefix(self.historyLimit))
                 }
+                PersistenceManager.save(self.items)
             }
         }
     }
@@ -57,6 +101,151 @@ class ClipboardManager: ObservableObject {
         pasteboard.setString(item.content, forType: .string)
         lastChangeCount = pasteboard.changeCount
     }
+
+    func deleteItem(_ item: ClipboardItem) {
+        items.removeAll { $0.id == item.id }
+        PersistenceManager.save(items)
+    }
+
+    func clearAll() {
+        items.removeAll()
+        PersistenceManager.save(items)
+    }
+}
+
+// MARK: - Settings View
+struct SettingsView: View {
+    @ObservedObject var manager: ClipboardManager
+    @Environment(\.dismiss) private var dismiss
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var showClearConfirmation = false
+
+    private let historyOptions = [25, 50, 100, 200]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Settings")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+
+            VStack(spacing: 20) {
+                // General section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("General")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Toggle("Launch at Login", isOn: $launchAtLogin)
+                            .toggleStyle(.switch)
+                            .onChange(of: launchAtLogin) { oldValue, newValue in
+                                do {
+                                    if newValue {
+                                        try SMAppService.mainApp.register()
+                                    } else {
+                                        try SMAppService.mainApp.unregister()
+                                    }
+                                } catch {
+                                    launchAtLogin = oldValue
+                                }
+                            }
+                    }
+                }
+                .padding(.horizontal)
+
+                Divider()
+                    .padding(.horizontal)
+
+                // Storage section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Storage")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Image(systemName: "tray.full")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Text("History Limit")
+                        Spacer()
+                        Picker("", selection: $manager.historyLimit) {
+                            ForEach(historyOptions, id: \.self) { count in
+                                Text("\(count) items").tag(count)
+                            }
+                        }
+                        .frame(width: 120)
+                    }
+
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.secondary)
+                            .frame(width: 20)
+                        Text("Currently storing \(manager.items.count) items")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+
+                Divider()
+                    .padding(.horizontal)
+
+                // Danger zone
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Danger Zone")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                            .frame(width: 20)
+
+                        if showClearConfirmation {
+                            Text("Are you sure?")
+                                .foregroundColor(.red)
+                            Spacer()
+                            Button("Cancel") {
+                                showClearConfirmation = false
+                            }
+                            Button("Delete All") {
+                                manager.clearAll()
+                                showClearConfirmation = false
+                            }
+                            .foregroundColor(.red)
+                        } else {
+                            Text("Clear All History")
+                            Spacer()
+                            Button("Clear...") {
+                                showClearConfirmation = true
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+
+                Spacer()
+            }
+            .padding(.top)
+        }
+        .frame(width: 350, height: 380)
+    }
 }
 
 // MARK: - History View
@@ -64,6 +253,7 @@ struct HistoryView: View {
     @ObservedObject var manager: ClipboardManager
     @State private var searchText = ""
     @State private var showingAbout = false
+    @State private var showingSettings = false
 
     var filteredItems: [ClipboardItem] {
         if searchText.isEmpty {
@@ -85,18 +275,19 @@ struct HistoryView: View {
                     .font(.title2)
                 Spacer()
 
-                Button(action: {
-                    showingAbout = true
-                }) {
+                Button(action: { showingSettings = true }) {
+                    Image(systemName: "gearshape")
+                        .font(.title2)
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
+
+                Button(action: { showingAbout = true }) {
                     Image(systemName: "questionmark.circle")
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
                 .help("About")
-
-                Button("Clear") {
-                    manager.items.removeAll()
-                }
 
                 Button(action: {
                     NSApplication.shared.terminate(nil)
@@ -111,9 +302,15 @@ struct HistoryView: View {
             .padding()
 
             // Search
-            TextField("Search...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
+            HStack {
+                TextField("Search...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                Spacer()
+                Text("\(manager.items.count) items")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
 
             // List
             ScrollView {
@@ -128,6 +325,14 @@ struct HistoryView: View {
                                     .lineLimit(2)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
+
+                            Button(action: { manager.deleteItem(item) }) {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Delete")
 
                             Button("Copy") {
                                 manager.copyItem(item)
@@ -146,6 +351,9 @@ struct HistoryView: View {
         .frame(width: 400, height: 550)
         .sheet(isPresented: $showingAbout) {
             AboutViewSimple()
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(manager: manager)
         }
     }
 }
@@ -177,7 +385,7 @@ struct AboutViewSimple: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Version 1.0.0")
+                Text("Version 1.1.0")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -223,6 +431,22 @@ struct AboutViewSimple: View {
                             .foregroundColor(.blue)
                             .frame(width: 16)
                         Text("Lightning Fast")
+                            .font(.caption)
+                    }
+
+                    HStack {
+                        Image(systemName: "externaldrive")
+                            .foregroundColor(.blue)
+                            .frame(width: 16)
+                        Text("Persistent History")
+                            .font(.caption)
+                    }
+
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(.blue)
+                            .frame(width: 16)
+                        Text("Launch at Login")
                             .font(.caption)
                     }
                 }
@@ -281,6 +505,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start monitoring
         manager.startMonitoring()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        PersistenceManager.save(manager.items)
     }
 
     @objc func togglePopover() {
