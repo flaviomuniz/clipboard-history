@@ -4,12 +4,21 @@
 
 An open-source, lightweight clipboard history manager for macOS (Apple Silicon and Intel).
 
+## Screenshots
+
+<p align="center">
+  <img src="images/history.png" width="280" alt="Clipboard History">
+  <img src="images/settings.png" width="280" alt="Settings">
+  <img src="images/about.png" width="280" alt="About">
+</p>
+
 ## Features
 
-- **Clipboard History** - Keeps a history of everything you copy (up to 50 items)
+- **Clipboard History** - Keeps a history of everything you copy (up to 200 items)
 - **Search** - Quickly find items in history
 - **Persistent Storage** - History is saved to disk and survives app restarts
 - **Launch at Login** - Option to start automatically when you log in
+- **Settings** - Configurable history limit, launch at login, clear history
 - **Menu Bar App** - Lives in your menu bar, out of the way
 - **Lightweight & Fast** - Single-file Swift app, minimal resource usage
 - **Privacy First** - All data stored locally, nothing sent anywhere
@@ -44,8 +53,8 @@ cp -r ClipboardHistory.app /Applications/
 2. **Open History** - Click the clipboard icon in the menu bar
 3. **Paste** - Click "Copy" on any item to put it back on your clipboard
 4. **Search** - Type in the search box to filter items
-5. **Clear** - Click "Clear" to remove all history
-6. **Launch at Login** - Toggle the switch to start automatically on login
+5. **Delete** - Click the trash icon to remove individual items
+6. **Settings** - Click the gear icon to configure preferences
 
 ## How It Works
 
@@ -59,6 +68,7 @@ ClipboardHistory/
 ├── build.sh                        # Build script
 ├── create_icon.swift               # Icon generation script
 ├── ClipboardHistory.icns           # App icon
+├── images/                         # Screenshots
 ├── LICENSE                         # MIT License
 ├── CONTRIBUTING.md                 # Contribution guidelines
 └── README.md                       # This file
@@ -74,10 +84,9 @@ ClipboardHistory/
 ## Roadmap
 
 - [ ] Global keyboard shortcut (e.g. `Cmd+Shift+V`) to open history
-- [ ] Screenshot / GIF demo in README
 - [ ] Image and rich text support
 - [ ] Keyboard navigation (arrow keys + Enter to paste)
-- [ ] Configurable history limit and expiration
+- [ ] Configurable history expiration
 - [ ] Homebrew cask for easy installation
 - [ ] Code snippets support with syntax highlighting
 - [ ] Categories and tags for organization
