@@ -553,7 +553,8 @@ struct ShortcutRecorderButton: View {
 struct SettingsView: View {
     @ObservedObject var manager: ClipboardManager
     @Environment(\.dismiss) private var dismiss
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
+    @State private var launchAtLoginErrorMessage: String?
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
     @State private var settingsWindow: NSWindow?
@@ -593,19 +594,24 @@ struct SettingsView: View {
                         Image(systemName: "arrow.clockwise")
                             .foregroundColor(.blue)
                             .frame(width: 20)
-                        Toggle("Launch at Login", isOn: $launchAtLogin)
+                        Toggle("Launch at Login", isOn: Binding(
+                            get: { launchAtLogin },
+                            set: { setLaunchAtLogin($0) }
+                        ))
                             .toggleStyle(.switch)
-                            .onChange(of: launchAtLogin) { oldValue, newValue in
-                                do {
-                                    if newValue {
-                                        try SMAppService.mainApp.register()
-                                    } else {
-                                        try SMAppService.mainApp.unregister()
-                                    }
-                                } catch {
-                                    launchAtLogin = oldValue
-                                }
+                    }
+
+                    if let launchAtLoginErrorMessage {
+                        Text(launchAtLoginErrorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        if SMAppService.mainApp.status == .requiresApproval {
+                            Button("Open Login Items") {
+                                SMAppService.openSystemSettingsLoginItems()
                             }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
                     }
 
                     HStack {
@@ -778,6 +784,36 @@ struct SettingsView: View {
         }
         .frame(width: 350, height: 540)
         .background(SettingsWindowReader { settingsWindow = $0 })
+        .onAppear { refreshLaunchAtLoginState() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshLaunchAtLoginState()
+        }
+    }
+
+    private static let launchAtLoginApprovalMessage = "Approve ClipboardHistory in System Settings › Login Items."
+
+    private func setLaunchAtLogin(_ isEnabled: Bool) {
+        do {
+            if isEnabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            launchAtLoginErrorMessage = nil
+            refreshLaunchAtLoginState()
+        } catch {
+            launchAtLoginErrorMessage = "Couldn't change Launch at Login: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshLaunchAtLoginState() {
+        let status = SMAppService.mainApp.status
+        launchAtLogin = status == .enabled || status == .requiresApproval
+        if status == .requiresApproval {
+            launchAtLoginErrorMessage = Self.launchAtLoginApprovalMessage
+        } else if launchAtLoginErrorMessage == Self.launchAtLoginApprovalMessage {
+            launchAtLoginErrorMessage = nil
+        }
     }
 
     private func presentAddAppPanel() {
