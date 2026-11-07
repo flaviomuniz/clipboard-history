@@ -11,7 +11,8 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Persistent Storage** - History is saved to disk and survives app restarts
 - **Launch at Login** - Option to start automatically when you log in
 - **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
-- **Settings** - Configurable history limit, launch at login, clear history
+- **Global Shortcut** - Open history from anywhere with ⇧⌘V (Cmd+Shift+V), changeable in Settings
+- **Settings** - Configurable history limit, launch at login, keyboard shortcut, ignored apps, clear history
 - **Menu Bar App** - Lives in your menu bar, out of the way
 - **Lightweight & Fast** - Single-file Swift app, minimal resource usage
 - **Privacy First** - All data stored locally, nothing sent anywhere
@@ -49,6 +50,8 @@ cp -r ClipboardHistory.app /Applications/
 5. **Delete** - Click the trash icon to remove individual items
 6. **Settings** - Click the gear icon to configure preferences
 
+You can also press Cmd+Shift+V in any app to open or close the history. While ClipboardHistory is running, this replaces "Paste and Match Style" in other apps. If you use that, pick another shortcut in Settings.
+
 ## How It Works
 
 ClipboardHistory monitors your system clipboard every 0.5 seconds. When it detects a new text copy, it saves it to a local JSON file at `~/Library/Application Support/ClipboardHistory/history.json`. The history persists across app restarts and system reboots.
@@ -78,7 +81,7 @@ ClipboardHistory/
 
 ## Roadmap
 
-- [ ] Global keyboard shortcut (e.g. `Cmd+Shift+V`) to open history
+- [x] Global keyboard shortcut (e.g. `Cmd+Shift+V`) to open history
 - [ ] Image and rich text support
 - [ ] Keyboard navigation (arrow keys + Enter to paste)
 - [ ] Configurable history expiration
