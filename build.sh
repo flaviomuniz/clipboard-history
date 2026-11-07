@@ -1,10 +1,15 @@
 #!/bin/bash
+set -euo pipefail
+
+## Oldest macOS the app supports. Used for the compiler target and Info.plist.
+MINIMUM_MACOS_VERSION="13.0"
 
 echo "🔨 Building ClipboardHistory..."
 
 # Compile the app
 swiftc ClipboardHistorySimple.swift \
     -o ClipboardHistory \
+    -target "$(uname -m)-apple-macos${MINIMUM_MACOS_VERSION}" \
     -framework SwiftUI \
     -framework AppKit \
     -framework ServiceManagement \
@@ -19,7 +24,7 @@ mkdir -p ClipboardHistory.app/Contents/Resources
 mv ClipboardHistory ClipboardHistory.app/Contents/MacOS/
 
 # Create Info.plist
-cat > ClipboardHistory.app/Contents/Info.plist << 'EOF'
+cat > ClipboardHistory.app/Contents/Info.plist << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -37,7 +42,7 @@ cat > ClipboardHistory.app/Contents/Info.plist << 'EOF'
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+    <string>${MINIMUM_MACOS_VERSION}</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHighResolutionCapable</key>
