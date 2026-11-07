@@ -1012,7 +1012,7 @@ struct AboutViewSimple: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Version 1.1.0")
+                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
