@@ -608,6 +608,10 @@ struct SettingsView: View {
                         if SMAppService.mainApp.status == .requiresApproval {
                             Button("Open Login Items") {
                                 SMAppService.openSystemSettingsLoginItems()
+                                // Get the popover out of the way so System Settings is in front.
+                                DispatchQueue.main.async {
+                                    (NSApp.delegate as? AppDelegate)?.closePopover()
+                                }
                             }
                             .buttonStyle(.link)
                             .font(.caption)
@@ -786,6 +790,9 @@ struct SettingsView: View {
         .background(SettingsWindowReader { settingsWindow = $0 })
         .onAppear { refreshLaunchAtLoginState() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshLaunchAtLoginState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
             refreshLaunchAtLoginState()
         }
     }
@@ -1201,11 +1208,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .clipboardPopoverDidOpen, object: nil)
             }
         } else if popover?.isShown == true {
-            if let window = popover?.contentViewController?.view.window,
-               let sheet = window.attachedSheet {
-                window.endSheet(sheet)
-            }
-            popover?.performClose(nil)
+            closePopover()
         } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -1234,6 +1237,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .clipboardPopoverDidOpen, object: nil)
             }
         }
+    }
+
+    func closePopover() {
+        if let window = popover?.contentViewController?.view.window,
+           let sheet = window.attachedSheet {
+            window.endSheet(sheet)
+        }
+        popover?.performClose(nil)
     }
 }
 
