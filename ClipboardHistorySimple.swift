@@ -1164,6 +1164,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
     let manager = ClipboardManager()
+    private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Create status bar item
@@ -1180,6 +1181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover = NSPopover()
         popover?.contentViewController = NSHostingController(rootView: HistoryView(manager: manager))
         popover?.behavior = .transient
+        popover?.delegate = self
 
         // Global shortcut
         HotkeyManager.shared.onHotkeyPressed = { [weak self] in
@@ -1245,6 +1247,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.endSheet(sheet)
         }
         popover?.performClose(nil)
+    }
+
+    /// `.transient` alone doesn't close the popover when a sheet (Settings/About) is attached
+    /// or when it was opened by the hotkey, so close it on any click that lands in another app.
+    private func startOutsideClickMonitor() {
+        guard outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            guard let self, self.popover?.isShown == true else { return }
+            // Keep it open while the "choose app" panel is up inside Settings.
+            if self.popover?.contentViewController?.view.window?.attachedSheet?.attachedSheet != nil {
+                return
+            }
+            self.closePopover()
+        }
+    }
+
+    private func stopOutsideClickMonitor() {
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
+    }
+}
+
+extension AppDelegate: NSPopoverDelegate {
+    func popoverDidShow(_ notification: Notification) {
+        startOutsideClickMonitor()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        stopOutsideClickMonitor()
     }
 }
 
