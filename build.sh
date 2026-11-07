@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-## Oldest macOS the app supports. Used for the compiler target and Info.plist.
+# Oldest macOS the app supports. Used for the compiler target and Info.plist.
 MINIMUM_MACOS_VERSION="13.0"
 
 echo "🔨 Building ClipboardHistory..."
