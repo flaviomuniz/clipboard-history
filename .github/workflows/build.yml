@@ -13,13 +13,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build app
-        run: |
-          swiftc ClipboardHistorySimple.swift \
-            -o ClipboardHistory \
-            -framework SwiftUI \
-            -framework AppKit \
-            -framework ServiceManagement \
-            -O
+        run: ./build.sh
 
       - name: Verify executable
-        run: file ClipboardHistory
+        run: file ClipboardHistory.app/Contents/MacOS/ClipboardHistory
+
+      - name: Check the macOS 13 deployment target
+        run: |
+          vtool -show-build ClipboardHistory.app/Contents/MacOS/ClipboardHistory
+          vtool -show-build ClipboardHistory.app/Contents/MacOS/ClipboardHistory | grep -Fx '    minos 13.0'
+          /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' ClipboardHistory.app/Contents/Info.plist | grep -qx '13.0'
