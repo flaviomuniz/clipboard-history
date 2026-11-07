@@ -1177,7 +1177,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let popoverWindow = popover?.contentViewController?.view.window {
                 var frame = popoverWindow.frame
 
-                if let screen = NSScreen.main {
+                if let screen = button.window?.screen ?? popoverWindow.screen ?? NSScreen.main {
                     let screenFrame = screen.visibleFrame
 
                     if frame.maxY > screenFrame.maxY {
