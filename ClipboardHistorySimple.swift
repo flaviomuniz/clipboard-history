@@ -414,6 +414,113 @@ extension Notification.Name {
     static let clipboardPopoverDidOpen = Notification.Name("clipboardPopoverDidOpen")
 }
 
+// MARK: - Shortcut Recorder
+struct ShortcutRecorderButton: View {
+    @ObservedObject private var hotkeyManager = HotkeyManager.shared
+    @Binding var isRecording: Bool
+    @State private var localMonitor: Any?
+
+    private static let keyLabelsByKeyCode: [Int: String] = [
+        kVK_ANSI_0: "0", kVK_ANSI_1: "1", kVK_ANSI_2: "2", kVK_ANSI_3: "3", kVK_ANSI_4: "4",
+        kVK_ANSI_5: "5", kVK_ANSI_6: "6", kVK_ANSI_7: "7", kVK_ANSI_8: "8", kVK_ANSI_9: "9",
+        kVK_Return: "↩", kVK_Tab: "⇥", kVK_Space: "Space", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
+        kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
+        kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
+        kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
+        kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12"
+    ]
+
+    var body: some View {
+        Button(action: toggleRecording) {
+            Text(isRecording ? "Type shortcut…" : hotkeyManager.currentHotkey.displayString)
+                .frame(minWidth: 90)
+        }
+        .onDisappear {
+            if isRecording { stopRecording(resume: true) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSPopover.willCloseNotification)) { _ in
+            if isRecording { stopRecording(resume: true) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if isRecording { stopRecording(resume: true) }
+        }
+    }
+
+    private func toggleRecording() {
+        if isRecording {
+            stopRecording(resume: true)
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        hotkeyManager.lastErrorMessage = nil
+        hotkeyManager.suspend()
+        isRecording = true
+        guard let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
+            handleKeyDown(event)
+            return nil
+        }) else {
+            isRecording = false
+            hotkeyManager.resume()
+            return
+        }
+        localMonitor = monitor
+    }
+
+    private func stopRecording(resume: Bool) {
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+        isRecording = false
+        if resume {
+            hotkeyManager.resume()
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) {
+        if event.isARepeat { return }
+
+        let carbonModifiers = Hotkey.carbonModifiers(from: event.modifierFlags)
+        let hasNoModifiers = carbonModifiers == 0
+
+        if Int(event.keyCode) == kVK_Escape && hasNoModifiers {
+            stopRecording(resume: true)
+            return
+        }
+
+        let requiredModifiers = UInt32(cmdKey | controlKey | optionKey)
+        guard carbonModifiers & requiredModifiers != 0,
+              let keyLabel = keyLabel(for: event) else {
+            NSSound.beep()
+            return
+        }
+
+        stopRecording(resume: false)
+        hotkeyManager.apply(Hotkey(keyCode: UInt32(event.keyCode), modifiers: carbonModifiers, keyLabel: keyLabel))
+    }
+
+    private func keyLabel(for event: NSEvent) -> String? {
+        if let mappedLabel = ShortcutRecorderButton.keyLabelsByKeyCode[Int(event.keyCode)] {
+            return mappedLabel
+        }
+        guard let characters = event.charactersIgnoringModifiers?.uppercased(),
+              !characters.isEmpty else {
+            return nil
+        }
+        for scalar in characters.unicodeScalars {
+            let isControlCharacter = scalar.value < 0x20 || scalar.value == 0x7F
+            let isPrivateUseFunctionKey = (0xF700...0xF8FF).contains(scalar.value)
+            if isControlCharacter || isPrivateUseFunctionKey {
+                return nil
+            }
+        }
+        return characters
+    }
+}
+
 // MARK: - Settings View
 struct SettingsView: View {
     @ObservedObject var manager: ClipboardManager
@@ -422,6 +529,8 @@ struct SettingsView: View {
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
     @State private var settingsWindow: NSWindow?
+    @State private var isRecordingShortcut = false
+    @ObservedObject private var hotkeyManager = HotkeyManager.shared
 
     private let historyOptions = [25, 50, 100, 200]
 
@@ -469,6 +578,27 @@ struct SettingsView: View {
                                     launchAtLogin = oldValue
                                 }
                             }
+                    }
+
+                    HStack {
+                        Image(systemName: "keyboard")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Text("Keyboard Shortcut")
+                        Spacer()
+                        ShortcutRecorderButton(isRecording: $isRecordingShortcut)
+                        Button(action: { hotkeyManager.resetToDefault() }) {
+                            Image(systemName: "arrow.counterclockwise")
+                        }
+                        .buttonStyle(.plain)
+                        .help("Reset to \(Hotkey.defaultHotkey.displayString)")
+                        .disabled(hotkeyManager.currentHotkey == Hotkey.defaultHotkey || isRecordingShortcut)
+                    }
+
+                    if let shortcutErrorMessage = hotkeyManager.lastErrorMessage {
+                        Text(shortcutErrorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
                     }
                 }
                 .padding(.horizontal)
@@ -916,6 +1046,14 @@ struct AboutViewSimple: View {
                         Text("Launch at Login")
                             .font(.caption)
                     }
+
+                    HStack {
+                        Image(systemName: "keyboard")
+                            .foregroundColor(.blue)
+                            .frame(width: 16)
+                        Text("Global Shortcut")
+                            .font(.caption)
+                    }
                 }
             }
 
@@ -944,7 +1082,7 @@ struct AboutViewSimple: View {
                 .foregroundColor(.secondary)
         }
         .padding(20)
-        .frame(width: 350, height: 500)
+        .frame(width: 350, height: 520)
     }
 }
 
