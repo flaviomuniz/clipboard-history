@@ -4,6 +4,7 @@ import Cocoa
 import SwiftUI
 import ServiceManagement
 import UniformTypeIdentifiers
+import Carbon
 
 // MARK: - Clipboard Item Model
 struct ClipboardItem: Identifiable, Codable {
@@ -228,6 +229,189 @@ class ClipboardManager: ObservableObject {
         }
         PersistenceManager.save(items)
     }
+}
+
+// MARK: - Hotkey
+struct Hotkey: Equatable {
+    var keyCode: UInt32
+    var modifiers: UInt32  // Carbon modifier mask (cmdKey, shiftKey, optionKey, controlKey)
+    var keyLabel: String
+
+    static let defaultHotkey = Hotkey(
+        keyCode: UInt32(kVK_ANSI_V),
+        modifiers: UInt32(cmdKey | shiftKey),
+        keyLabel: "V"
+    )
+
+    var displayString: String {
+        var result = ""
+        if modifiers & UInt32(controlKey) != 0 { result += "⌃" }
+        if modifiers & UInt32(optionKey) != 0 { result += "⌥" }
+        if modifiers & UInt32(shiftKey) != 0 { result += "⇧" }
+        if modifiers & UInt32(cmdKey) != 0 { result += "⌘" }
+        return result + keyLabel
+    }
+
+    static func carbonModifiers(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var mask: UInt32 = 0
+        if flags.contains(.command) { mask |= UInt32(cmdKey) }
+        if flags.contains(.shift) { mask |= UInt32(shiftKey) }
+        if flags.contains(.option) { mask |= UInt32(optionKey) }
+        if flags.contains(.control) { mask |= UInt32(controlKey) }
+        return mask
+    }
+}
+
+final class HotkeyManager: ObservableObject {
+    static let shared = HotkeyManager()
+
+    private static let keyCodeDefaultsKey = "hotkeyKeyCode"
+    private static let modifiersDefaultsKey = "hotkeyModifiers"
+    private static let keyLabelDefaultsKey = "hotkeyKeyLabel"
+    private static let hotkeySignature: OSType = 0x434C4248  // "CLBH"
+    private static let hotkeyIdentifier: UInt32 = 1
+
+    @Published private(set) var currentHotkey: Hotkey
+    @Published var lastErrorMessage: String?
+
+    var onHotkeyPressed: (() -> Void)?
+
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandlerRef: EventHandlerRef?
+
+    private init() {
+        currentHotkey = HotkeyManager.loadPersistedHotkey()
+    }
+
+    private static func loadPersistedHotkey() -> Hotkey {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: keyCodeDefaultsKey) != nil,
+              defaults.object(forKey: modifiersDefaultsKey) != nil,
+              let label = defaults.string(forKey: keyLabelDefaultsKey) else {
+            return Hotkey.defaultHotkey
+        }
+        return Hotkey(
+            keyCode: UInt32(defaults.integer(forKey: keyCodeDefaultsKey)),
+            modifiers: UInt32(defaults.integer(forKey: modifiersDefaultsKey)),
+            keyLabel: label
+        )
+    }
+
+    private func persist(_ hotkey: Hotkey) {
+        let defaults = UserDefaults.standard
+        defaults.set(Int(hotkey.keyCode), forKey: HotkeyManager.keyCodeDefaultsKey)
+        defaults.set(Int(hotkey.modifiers), forKey: HotkeyManager.modifiersDefaultsKey)
+        defaults.set(hotkey.keyLabel, forKey: HotkeyManager.keyLabelDefaultsKey)
+    }
+
+    /// Installs the application-level handler for hotkey presses. Call once.
+    @discardableResult
+    func installEventHandler() -> Bool {
+        guard eventHandlerRef == nil else { return true }
+
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        let userData = Unmanaged.passUnretained(self).toOpaque()
+
+        let status = InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, _, userData in
+                guard let userData = userData else { return noErr }
+                let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+                DispatchQueue.main.async {
+                    manager.onHotkeyPressed?()
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            userData,
+            &eventHandlerRef
+        )
+        if status != noErr {
+            NSLog("ClipboardHistory: could not install hotkey event handler (status \(status))")
+            lastErrorMessage = "Couldn't enable the keyboard shortcut."
+            return false
+        }
+        return true
+    }
+
+    private func unregisterHotkey() {
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
+        }
+    }
+
+    /// Unregisters any existing hotkey and registers `hotkey` exclusively.
+    private func register(_ hotkey: Hotkey) -> OSStatus {
+        unregisterHotkey()
+        let hotKeyID = EventHotKeyID(
+            signature: HotkeyManager.hotkeySignature,
+            id: HotkeyManager.hotkeyIdentifier
+        )
+        var newRef: EventHotKeyRef?
+        let status = RegisterEventHotKey(
+            hotkey.keyCode,
+            hotkey.modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            OptionBits(kEventHotKeyExclusive),
+            &newRef
+        )
+        if status == noErr {
+            hotKeyRef = newRef
+        }
+        return status
+    }
+
+    func registerCurrentHotkey() {
+        let status = register(currentHotkey)
+        if status != noErr {
+            NSLog("ClipboardHistory: could not register hotkey \(currentHotkey.displayString) (status \(status))")
+            lastErrorMessage = "Couldn't register \(currentHotkey.displayString) (it may be in use)."
+        } else {
+            lastErrorMessage = nil
+        }
+    }
+
+    /// Temporarily unregisters the hotkey, e.g. while the user records a new one.
+    func suspend() {
+        unregisterHotkey()
+    }
+
+    func resume() {
+        registerCurrentHotkey()
+    }
+
+    @discardableResult
+    func apply(_ newHotkey: Hotkey) -> Bool {
+        let status = register(newHotkey)
+        if status == noErr {
+            currentHotkey = newHotkey
+            persist(newHotkey)
+            lastErrorMessage = nil
+            return true
+        }
+
+        NSLog("ClipboardHistory: could not register hotkey \(newHotkey.displayString) (status \(status))")
+        if register(currentHotkey) == noErr {
+            lastErrorMessage = "Couldn't register \(newHotkey.displayString) (it may be in use). Kept \(currentHotkey.displayString)."
+        } else {
+            lastErrorMessage = "Couldn't register any shortcut."
+        }
+        return false
+    }
+
+    func resetToDefault() {
+        apply(Hotkey.defaultHotkey)
+    }
+}
+
+extension Notification.Name {
+    static let clipboardPopoverDidOpen = Notification.Name("clipboardPopoverDidOpen")
 }
 
 // MARK: - Settings View
@@ -526,6 +710,7 @@ struct HistoryView: View {
     @State private var searchText = ""
     @State private var showingAbout = false
     @State private var showingSettings = false
+    @FocusState private var isSearchFocused: Bool
 
     var filteredItems: [ClipboardItem] {
         if searchText.isEmpty {
@@ -577,6 +762,7 @@ struct HistoryView: View {
             HStack {
                 TextField("Search...", text: $searchText)
                     .textFieldStyle(.roundedBorder)
+                    .focused($isSearchFocused)
                 Spacer()
                 Text("\(manager.items.count) items")
                     .font(.caption)
@@ -626,6 +812,15 @@ struct HistoryView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(manager: manager)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
+            searchText = ""
+            showingSettings = false
+            showingAbout = false
+            isSearchFocused = false
+            DispatchQueue.main.async {
+                isSearchFocused = true
+            }
         }
     }
 }
@@ -775,6 +970,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         popover?.contentViewController = NSHostingController(rootView: HistoryView(manager: manager))
         popover?.behavior = .transient
 
+        // Global shortcut
+        HotkeyManager.shared.onHotkeyPressed = { [weak self] in
+            self?.togglePopover()
+        }
+        if HotkeyManager.shared.installEventHandler() {
+            HotkeyManager.shared.registerCurrentHotkey()
+        }
+
         // Start monitoring
         manager.startMonitoring()
     }
@@ -787,8 +990,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
 
         if popover?.isShown == true {
+            if let window = popover?.contentViewController?.view.window,
+               let sheet = window.attachedSheet {
+                window.endSheet(sheet)
+            }
             popover?.performClose(nil)
         } else {
+            NSApplication.shared.activate(ignoringOtherApps: true)
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
             if let popoverWindow = popover?.contentViewController?.view.window {
@@ -807,9 +1015,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
                     popoverWindow.setFrame(frame, display: true)
                 }
+
+                popoverWindow.makeKeyAndOrderFront(nil)
             }
 
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .clipboardPopoverDidOpen, object: nil)
+            }
         }
     }
 }
