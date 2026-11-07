@@ -10,6 +10,7 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Search** - Quickly find items in history
 - **Persistent Storage** - History is saved to disk and survives app restarts
 - **Launch at Login** - Option to start automatically when you log in
+- **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
 - **Settings** - Configurable history limit, launch at login, clear history
 - **Menu Bar App** - Lives in your menu bar, out of the way
 - **Lightweight & Fast** - Single-file Swift app, minimal resource usage
@@ -51,6 +52,8 @@ cp -r ClipboardHistory.app /Applications/
 ## How It Works
 
 ClipboardHistory monitors your system clipboard every 0.5 seconds. When it detects a new text copy, it saves it to a local JSON file at `~/Library/Application Support/ClipboardHistory/history.json`. The history persists across app restarts and system reboots.
+
+Copies marked as passwords by password managers are never saved, and copies from ignored apps are skipped. When an app doesn't say where a copy came from, the source is guessed from the frontmost app, so source-app detection is best-effort. The password marker is the main protection.
 
 ## Project Structure
 
