@@ -8,7 +8,7 @@ Thanks for your interest in contributing! Here's how you can help.
 2. Clone your fork:
    ```bash
    git clone https://github.com/YOUR_USERNAME/clipboard-history
-   cd ClipboardHistory
+   cd clipboard-history
    ```
 3. Build the app:
    ```bash

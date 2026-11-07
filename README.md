@@ -27,7 +27,7 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 1. Clone the repository:
 ```bash
 git clone https://github.com/flaviomuniz/clipboard-history
-cd ClipboardHistory
+cd clipboard-history
 ```
 
 2. Build the app:

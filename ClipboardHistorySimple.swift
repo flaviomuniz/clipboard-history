@@ -553,7 +553,8 @@ struct ShortcutRecorderButton: View {
 struct SettingsView: View {
     @ObservedObject var manager: ClipboardManager
     @Environment(\.dismiss) private var dismiss
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
+    @State private var launchAtLoginErrorMessage: String?
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
     @State private var settingsWindow: NSWindow?
@@ -593,19 +594,28 @@ struct SettingsView: View {
                         Image(systemName: "arrow.clockwise")
                             .foregroundColor(.blue)
                             .frame(width: 20)
-                        Toggle("Launch at Login", isOn: $launchAtLogin)
+                        Toggle("Launch at Login", isOn: Binding(
+                            get: { launchAtLogin },
+                            set: { setLaunchAtLogin($0) }
+                        ))
                             .toggleStyle(.switch)
-                            .onChange(of: launchAtLogin) { oldValue, newValue in
-                                do {
-                                    if newValue {
-                                        try SMAppService.mainApp.register()
-                                    } else {
-                                        try SMAppService.mainApp.unregister()
-                                    }
-                                } catch {
-                                    launchAtLogin = oldValue
+                    }
+
+                    if let launchAtLoginErrorMessage {
+                        Text(launchAtLoginErrorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        if SMAppService.mainApp.status == .requiresApproval {
+                            Button("Open Login Items") {
+                                SMAppService.openSystemSettingsLoginItems()
+                                // Get the popover out of the way so System Settings is in front.
+                                DispatchQueue.main.async {
+                                    (NSApp.delegate as? AppDelegate)?.closePopover()
                                 }
                             }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
                     }
 
                     HStack {
@@ -778,6 +788,39 @@ struct SettingsView: View {
         }
         .frame(width: 350, height: 540)
         .background(SettingsWindowReader { settingsWindow = $0 })
+        .onAppear { refreshLaunchAtLoginState() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshLaunchAtLoginState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
+            refreshLaunchAtLoginState()
+        }
+    }
+
+    private static let launchAtLoginApprovalMessage = "Approve ClipboardHistory in System Settings › Login Items."
+
+    private func setLaunchAtLogin(_ isEnabled: Bool) {
+        do {
+            if isEnabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            launchAtLoginErrorMessage = nil
+            refreshLaunchAtLoginState()
+        } catch {
+            launchAtLoginErrorMessage = "Couldn't change Launch at Login: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshLaunchAtLoginState() {
+        let status = SMAppService.mainApp.status
+        launchAtLogin = status == .enabled || status == .requiresApproval
+        if status == .requiresApproval {
+            launchAtLoginErrorMessage = Self.launchAtLoginApprovalMessage
+        } else if launchAtLoginErrorMessage == Self.launchAtLoginApprovalMessage {
+            launchAtLoginErrorMessage = nil
+        }
     }
 
     private func presentAddAppPanel() {
@@ -1012,7 +1055,7 @@ struct AboutViewSimple: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Version 1.1.0")
+                Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -1165,11 +1208,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .clipboardPopoverDidOpen, object: nil)
             }
         } else if popover?.isShown == true {
-            if let window = popover?.contentViewController?.view.window,
-               let sheet = window.attachedSheet {
-                window.endSheet(sheet)
-            }
-            popover?.performClose(nil)
+            closePopover()
         } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -1177,7 +1216,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let popoverWindow = popover?.contentViewController?.view.window {
                 var frame = popoverWindow.frame
 
-                if let screen = NSScreen.main {
+                if let screen = button.window?.screen ?? popoverWindow.screen ?? NSScreen.main {
                     let screenFrame = screen.visibleFrame
 
                     if frame.maxY > screenFrame.maxY {
@@ -1198,6 +1237,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .clipboardPopoverDidOpen, object: nil)
             }
         }
+    }
+
+    func closePopover() {
+        if let window = popover?.contentViewController?.view.window,
+           let sheet = window.attachedSheet {
+            window.endSheet(sheet)
+        }
+        popover?.performClose(nil)
     }
 }
 
