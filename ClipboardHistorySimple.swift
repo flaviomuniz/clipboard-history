@@ -946,6 +946,8 @@ struct HistoryView: View {
     @State private var showingAbout = false
     @State private var showingSettings = false
     @FocusState private var isSearchFocused: Bool
+    @State private var highlightedItemID: UUID?
+    @State private var mouseLocationAtLastProgrammaticHighlight: NSPoint?
 
     var filteredItems: [ClipboardItem] {
         if searchText.isEmpty {
@@ -1006,39 +1008,37 @@ struct HistoryView: View {
             .padding(.horizontal)
 
             // List
-            ScrollView {
-                VStack(spacing: 2) {
-                    ForEach(filteredItems) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.timeAgo)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text(item.displayText)
-                                    .lineLimit(2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            Button(action: { manager.deleteItem(item) }) {
-                                Image(systemName: "trash")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete")
-
-                            Button("Copy") {
-                                manager.copyItem(item)
-                                NSApplication.shared.keyWindow?.close()
-                            }
-                            .buttonStyle(.bordered)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                            historyRow(for: item, at: index)
                         }
-                        .padding(8)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(4)
+                    }
+                    .padding()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .clipboardHistoryKeyCommand)) { notification in
+                    guard let command = notification.object as? HistoryKeyCommand else { return }
+                    switch command {
+                    case .moveUp:
+                        moveHighlight(by: -1, proxy: proxy)
+                    case .moveDown:
+                        moveHighlight(by: 1, proxy: proxy)
+                    case .copyHighlighted:
+                        if let index = highlightedIndex { copyAndClose(filteredItems[index]) }
+                    case .deleteHighlighted:
+                        deleteHighlightedItem()
+                    case .copyVisibleItem(let index):
+                        let visibleItems = filteredItems
+                        if index < visibleItems.count { copyAndClose(visibleItems[index]) }
                     }
                 }
-                .padding()
+                .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
+                    resetHighlightToFirstItem(proxy: proxy)
+                }
+                .onChange(of: searchText) { _ in
+                    resetHighlightToFirstItem(proxy: proxy)
+                }
             }
         }
         .frame(width: 400, height: 550)
@@ -1059,6 +1059,105 @@ struct HistoryView: View {
                 isSearchFocused = true
             }
         }
+        .onChange(of: manager.items.map(\.id)) { _ in
+            // Keep the highlight unless its item left the visible list.
+            if highlightedIndex == nil { setHighlight(filteredItems.first?.id) }
+        }
+        .onChange(of: showingSettings) { _ in navigationState.isListFocused = false }
+        .onChange(of: showingAbout) { _ in navigationState.isListFocused = false }
+    }
+
+    private var highlightedIndex: Int? {
+        guard let highlightedItemID else { return nil }
+        return filteredItems.firstIndex { $0.id == highlightedItemID }
+    }
+
+    /// The one copy path: Copy button, row click, Return and ⌘1–⌘9.
+    private func copyAndClose(_ item: ClipboardItem) {
+        manager.copyItem(item)
+        (NSApp.delegate as? AppDelegate)?.closePopover()
+    }
+
+    /// Every highlight change that isn't hover. Remembering the cursor position lets hover
+    /// ignore rows that move under a still cursor (opening, searching, deleting, scrolling).
+    private func setHighlight(_ id: UUID?) {
+        highlightedItemID = id
+        mouseLocationAtLastProgrammaticHighlight = NSEvent.mouseLocation
+    }
+
+    private func moveHighlight(by offset: Int, proxy: ScrollViewProxy) {
+        let visibleItems = filteredItems
+        guard !visibleItems.isEmpty else { return }
+        navigationState.isListFocused = true
+        let newIndex = highlightedIndex.map { min(max($0 + offset, 0), visibleItems.count - 1) } ?? 0
+        let newID = visibleItems[newIndex].id
+        setHighlight(newID)
+        proxy.scrollTo(newID)
+    }
+
+    private func deleteHighlightedItem() {
+        guard let index = highlightedIndex else { return }
+        manager.deleteItem(filteredItems[index])
+        let remainingItems = filteredItems
+        setHighlight(remainingItems.isEmpty ? nil : remainingItems[min(index, remainingItems.count - 1)].id)
+    }
+
+    private func resetHighlightToFirstItem(proxy: ScrollViewProxy) {
+        navigationState.isListFocused = false
+        let firstID = filteredItems.first?.id
+        setHighlight(firstID)
+        if let firstID { proxy.scrollTo(firstID, anchor: .top) }
+    }
+
+    @ViewBuilder
+    private func historyRow(for item: ClipboardItem, at index: Int) -> some View {
+        let isHighlighted = item.id == highlightedItemID
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(item.timeAgo)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if index < 9 {
+                        Text("⌘\(index + 1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Text(item.displayText)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button(action: { manager.deleteItem(item) }) {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
+
+            Button("Copy") {
+                copyAndClose(item)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(8)
+        .background(isHighlighted
+            ? Color.accentColor.opacity(navigationState.isListFocused ? 0.35 : 0.15)
+            : Color(NSColor.controlBackgroundColor))
+        .cornerRadius(4)
+        .contentShape(Rectangle())
+        .onTapGesture { copyAndClose(item) }
+        .onHover { inside in
+            guard inside, NSEvent.mouseLocation != mouseLocationAtLastProgrammaticHighlight else { return }
+            highlightedItemID = item.id
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isHighlighted ? .isSelected : [])
+        .accessibilityAction(named: "Copy") { copyAndClose(item) }
+        .accessibilityAction(named: "Delete") { manager.deleteItem(item) }
     }
 }
 
