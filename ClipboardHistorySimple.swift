@@ -1036,7 +1036,12 @@ struct HistoryView: View {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
+                    searchText = ""
                     clearHighlight(proxy: proxy)
+                    isSearchFocused = false
+                    DispatchQueue.main.async {
+                        isSearchFocused = true
+                    }
                 }
                 .onChange(of: searchText) { _ in
                     clearHighlight(proxy: proxy)
@@ -1053,13 +1058,6 @@ struct HistoryView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSPopover.willCloseNotification)) { _ in
             showingSettings = false
             showingAbout = false
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
-            searchText = ""
-            isSearchFocused = false
-            DispatchQueue.main.async {
-                isSearchFocused = true
-            }
         }
         .onChange(of: manager.items.map(\.id)) { _ in
             // Drop the highlight if its item left the visible list; never add one here.
@@ -1452,10 +1450,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case kVK_DownArrow where modifiers.isEmpty:
             command = .moveDown
         case kVK_Return where modifiers.isEmpty, kVK_ANSI_KeypadEnter where modifiers.isEmpty:
-            guard !event.isARepeat else { return event }
+            if event.isARepeat { return nil }
             command = .copyHighlighted
         case kVK_Escape where modifiers.isEmpty:
-            guard !event.isARepeat else { return event }
+            if event.isARepeat { return nil }
             closePopover()
             return nil
         case kVK_Delete where modifiers == .command:
@@ -1465,9 +1463,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if event.isARepeat { return nil }
             command = .deleteHighlighted
         default:
-            guard modifiers == .command, !event.isARepeat,
-                  let characters = event.charactersIgnoringModifiers,
+            guard modifiers == .command,
+                  let characters = event.charactersIgnoringModifiers?.lowercased(),
                   let index = HistoryKeyCommand.quickPickIndexByCharacter[characters] else { return event }
+            if event.isARepeat { return nil }
             command = .copyVisibleItem(index: index)
         }
 

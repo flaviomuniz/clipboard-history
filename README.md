@@ -12,7 +12,7 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Launch at Login** - Option to start automatically when you log in
 - **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
 - **Global Shortcut** - Open history from anywhere with ⇧⌘V (Cmd+Shift+V), changeable in Settings
-- **Keyboard Navigation** - Move through the list with ↑ ↓, copy with Return or ⌘1 to ⌘9, close with Esc
+- **Keyboard Navigation** - Move through the list with ↑ ↓, copy with Return or ⌘1 to ⌘9, delete with ⌘⌫, close with Esc
 - **Settings** - Configurable history limit, launch at login, keyboard shortcut, ignored apps, clear history
 - **Menu Bar App** - Lives in your menu bar, out of the way
 - **Lightweight & Fast** - Single-file Swift app, minimal resource usage
@@ -57,7 +57,7 @@ You can also press Cmd+Shift+V in any app to open or close the history. While Cl
 
 The search box has focus when the history opens, so you can type to filter right away.
 
-- **↑ / ↓** - Move the highlight. Nothing is highlighted when the history opens, so the first ↓ highlights the first item.
+- **↑ / ↓** - Move the highlight. Nothing is highlighted when the history opens, so the first ↑ or ↓ highlights the first item.
 - **Return** - Copy the highlighted item and close the history. Then paste with Cmd+V.
 - **Cmd+1 to Cmd+9** - Copy the item with that number (shown on the first nine rows).
 - **Cmd+Delete** - Delete the highlighted item. This only works after you move into the list with ↑ or ↓. Before that, Cmd+Delete clears the search box as usual.
