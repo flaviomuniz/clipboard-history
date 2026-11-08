@@ -172,14 +172,13 @@ class ClipboardManager: ObservableObject {
 
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
             let item = ClipboardItem(content: string, timestamp: Date(), sourceBundleID: sourceBundleID)
-            DispatchQueue.main.async {
-                self.items.removeAll { $0.content == item.content }
-                self.items.insert(item, at: 0)
-                if self.items.count > self.historyLimit {
-                    self.items = Array(self.items.prefix(self.historyLimit))
-                }
-                PersistenceManager.save(self.items)
+            // The timer runs on the main run loop; mutate synchronously so copies from the list and polled copies stay in order.
+            items.removeAll { $0.content == item.content }
+            items.insert(item, at: 0)
+            if items.count > historyLimit {
+                items = Array(items.prefix(historyLimit))
             }
+            PersistenceManager.save(items)
         }
     }
 
