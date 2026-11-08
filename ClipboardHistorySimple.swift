@@ -20,6 +20,13 @@ struct ClipboardItem: Identifiable, Codable {
         self.sourceBundleID = sourceBundleID
     }
 
+    init(id: UUID, content: String, timestamp: Date, sourceBundleID: String?) {
+        self.id = id
+        self.content = content
+        self.timestamp = timestamp
+        self.sourceBundleID = sourceBundleID
+    }
+
     var displayText: String {
         String(content.prefix(100))
     }
@@ -181,6 +188,12 @@ class ClipboardManager: ObservableObject {
         pasteboard.clearContents()
         pasteboard.setString(item.content, forType: .string)
         lastChangeCount = pasteboard.changeCount
+
+        // Move the copied item to the top with a fresh timestamp, keeping its id and source.
+        let promotedItem = ClipboardItem(id: item.id, content: item.content, timestamp: Date(), sourceBundleID: item.sourceBundleID)
+        items.removeAll { $0.id == item.id }
+        items.insert(promotedItem, at: 0)
+        PersistenceManager.save(items)
     }
 
     func deleteItem(_ item: ClipboardItem) {
