@@ -942,6 +942,7 @@ final class HistoryNavigationState: ObservableObject {
 struct HistoryView: View {
     @ObservedObject var manager: ClipboardManager
     @ObservedObject var navigationState: HistoryNavigationState
+    private let listTopScrollID = "historyListTop"
     @State private var searchText = ""
     @State private var showingAbout = false
     @State private var showingSettings = false
@@ -1016,6 +1017,7 @@ struct HistoryView: View {
                         }
                     }
                     .padding()
+                    .id(listTopScrollID)
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .clipboardHistoryKeyCommand)) { notification in
                     guard let command = notification.object as? HistoryKeyCommand else { return }
@@ -1034,10 +1036,10 @@ struct HistoryView: View {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
-                    resetHighlightToFirstItem(proxy: proxy)
+                    clearHighlight(proxy: proxy)
                 }
                 .onChange(of: searchText) { _ in
-                    resetHighlightToFirstItem(proxy: proxy)
+                    clearHighlight(proxy: proxy)
                 }
             }
         }
@@ -1060,8 +1062,8 @@ struct HistoryView: View {
             }
         }
         .onChange(of: manager.items.map(\.id)) { _ in
-            // Keep the highlight unless its item left the visible list.
-            if highlightedIndex == nil { setHighlight(filteredItems.first?.id) }
+            // Drop the highlight if its item left the visible list; never add one here.
+            if highlightedItemID != nil && highlightedIndex == nil { setHighlight(nil) }
         }
         .onChange(of: showingSettings) { _ in navigationState.isListFocused = false }
         .onChange(of: showingAbout) { _ in navigationState.isListFocused = false }
@@ -1102,11 +1104,10 @@ struct HistoryView: View {
         setHighlight(remainingItems.isEmpty ? nil : remainingItems[min(index, remainingItems.count - 1)].id)
     }
 
-    private func resetHighlightToFirstItem(proxy: ScrollViewProxy) {
+    private func clearHighlight(proxy: ScrollViewProxy) {
         navigationState.isListFocused = false
-        let firstID = filteredItems.first?.id
-        setHighlight(firstID)
-        if let firstID { proxy.scrollTo(firstID, anchor: .top) }
+        setHighlight(nil)
+        proxy.scrollTo(listTopScrollID, anchor: .top)
     }
 
     @ViewBuilder

@@ -57,7 +57,7 @@ You can also press Cmd+Shift+V in any app to open or close the history. While Cl
 
 The search box has focus when the history opens, so you can type to filter right away.
 
-- **↑ / ↓** - Move the highlight. The first item is highlighted when the history opens.
+- **↑ / ↓** - Move the highlight. Nothing is highlighted when the history opens, so the first ↓ highlights the first item.
 - **Return** - Copy the highlighted item and close the history. Then paste with Cmd+V.
 - **Cmd+1 to Cmd+9** - Copy the item with that number (shown on the first nine rows).
 - **Cmd+Delete** - Delete the highlighted item. This only works after you move into the list with ↑ or ↓. Before that, Cmd+Delete clears the search box as usual.
