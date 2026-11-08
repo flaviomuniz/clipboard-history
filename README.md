@@ -12,6 +12,7 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Launch at Login** - Option to start automatically when you log in
 - **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
 - **Global Shortcut** - Open history from anywhere with ⇧⌘V (Cmd+Shift+V), changeable in Settings
+- **Keyboard Navigation** - Move through the list with ↑ ↓, copy with Return or ⌘1 to ⌘9, delete with ⌘⌫, close with Esc
 - **Settings** - Configurable history limit, launch at login, keyboard shortcut, ignored apps, clear history
 - **Menu Bar App** - Lives in your menu bar, out of the way
 - **Lightweight & Fast** - Single-file Swift app, minimal resource usage
@@ -45,12 +46,22 @@ cp -r ClipboardHistory.app /Applications/
 
 1. **Copy** - Use Cmd+C normally to copy any content
 2. **Open History** - Click the clipboard icon in the menu bar
-3. **Paste** - Click "Copy" on any item to put it back on your clipboard
+3. **Paste** - Click "Copy" on any item, or the item itself, to put it back on your clipboard. It moves to the top of the list
 4. **Search** - Type in the search box to filter items
 5. **Delete** - Click the trash icon to remove individual items
 6. **Settings** - Click the gear icon to configure preferences
 
 You can also press Cmd+Shift+V in any app to open or close the history. While ClipboardHistory is running, this replaces "Paste and Match Style" in other apps. If you use that, pick another shortcut in Settings.
+
+### Keyboard
+
+The search box has focus when the history opens, so you can type to filter right away.
+
+- **↑ / ↓** - Move the highlight. Nothing is highlighted when the history opens, so the first ↑ or ↓ highlights the first item.
+- **Return** - Copy the highlighted item and close the history. Then paste with Cmd+V.
+- **Cmd+1 to Cmd+9** - Copy the item with that number (shown on the first nine rows).
+- **Cmd+Delete** - Delete the highlighted item. This only works after you move into the list with ↑ or ↓. Before that, Cmd+Delete clears the search box as usual.
+- **Esc** - Close the history.
 
 ## How It Works
 
@@ -83,7 +94,8 @@ ClipboardHistory/
 
 - [x] Global keyboard shortcut (e.g. `Cmd+Shift+V`) to open history
 - [ ] Image and rich text support
-- [ ] Keyboard navigation (arrow keys + Enter to paste)
+- [x] Keyboard navigation (arrow keys + Enter to copy)
+- [ ] Auto-paste into the previous app (opt-in)
 - [ ] Configurable history expiration
 - [ ] Homebrew cask for easy installation
 - [ ] Code snippets support with syntax highlighting

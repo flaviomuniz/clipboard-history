@@ -20,6 +20,13 @@ struct ClipboardItem: Identifiable, Codable {
         self.sourceBundleID = sourceBundleID
     }
 
+    init(id: UUID, content: String, timestamp: Date, sourceBundleID: String?) {
+        self.id = id
+        self.content = content
+        self.timestamp = timestamp
+        self.sourceBundleID = sourceBundleID
+    }
+
     var displayText: String {
         String(content.prefix(100))
     }
@@ -165,14 +172,13 @@ class ClipboardManager: ObservableObject {
 
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
             let item = ClipboardItem(content: string, timestamp: Date(), sourceBundleID: sourceBundleID)
-            DispatchQueue.main.async {
-                self.items.removeAll { $0.content == item.content }
-                self.items.insert(item, at: 0)
-                if self.items.count > self.historyLimit {
-                    self.items = Array(self.items.prefix(self.historyLimit))
-                }
-                PersistenceManager.save(self.items)
+            // The timer runs on the main run loop; mutate synchronously so copies from the list and polled copies stay in order.
+            items.removeAll { $0.content == item.content }
+            items.insert(item, at: 0)
+            if items.count > historyLimit {
+                items = Array(items.prefix(historyLimit))
             }
+            PersistenceManager.save(items)
         }
     }
 
@@ -181,6 +187,12 @@ class ClipboardManager: ObservableObject {
         pasteboard.clearContents()
         pasteboard.setString(item.content, forType: .string)
         lastChangeCount = pasteboard.changeCount
+
+        // Move the copied item to the top with a fresh timestamp, keeping its id and source.
+        let promotedItem = ClipboardItem(id: item.id, content: item.content, timestamp: Date(), sourceBundleID: item.sourceBundleID)
+        items.removeAll { $0.id == item.id }
+        items.insert(promotedItem, at: 0)
+        PersistenceManager.save(items)
     }
 
     func deleteItem(_ item: ClipboardItem) {
@@ -437,6 +449,7 @@ final class HotkeyManager: ObservableObject {
 
 extension Notification.Name {
     static let clipboardPopoverDidOpen = Notification.Name("clipboardPopoverDidOpen")
+    static let clipboardHistoryKeyCommand = Notification.Name("clipboardHistoryKeyCommand")
 }
 
 // MARK: - Shortcut Recorder
@@ -905,13 +918,37 @@ struct SettingsWindowReader: NSViewRepresentable {
     }
 }
 
+// MARK: - History Keyboard Navigation
+enum HistoryKeyCommand {
+    case moveUp, moveDown, copyHighlighted, deleteHighlighted
+    case copyVisibleItem(index: Int) // 0-based, from ⌘1–⌘9
+
+    /// Characters that pick the Nth visible item with ⌘. Matched by character, not key code,
+    /// so ⌘-letter shortcuts on other layouts are never taken.
+    static let quickPickIndexByCharacter: [String: Int] = [
+        "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6, "8": 7, "9": 8,
+        // French AZERTY top row without Shift
+        "&": 0, "é": 1, "\"": 2, "'": 3, "(": 4, "-": 5, "è": 6, "_": 7, "ç": 8
+    ]
+}
+
+/// Shared by AppDelegate's key monitor and HistoryView. The monitor needs to know
+/// whether ⌘⌫ belongs to the list or to the search field.
+final class HistoryNavigationState: ObservableObject {
+    @Published var isListFocused = false
+}
+
 // MARK: - History View
 struct HistoryView: View {
     @ObservedObject var manager: ClipboardManager
+    @ObservedObject var navigationState: HistoryNavigationState
+    private let listTopScrollID = "historyListTop"
     @State private var searchText = ""
     @State private var showingAbout = false
     @State private var showingSettings = false
     @FocusState private var isSearchFocused: Bool
+    @State private var highlightedItemID: UUID?
+    @State private var mouseLocationAtLastProgrammaticHighlight: NSPoint?
 
     var filteredItems: [ClipboardItem] {
         if searchText.isEmpty {
@@ -972,39 +1009,43 @@ struct HistoryView: View {
             .padding(.horizontal)
 
             // List
-            ScrollView {
-                VStack(spacing: 2) {
-                    ForEach(filteredItems) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.timeAgo)
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text(item.displayText)
-                                    .lineLimit(2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            Button(action: { manager.deleteItem(item) }) {
-                                Image(systemName: "trash")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .help("Delete")
-
-                            Button("Copy") {
-                                manager.copyItem(item)
-                                NSApplication.shared.keyWindow?.close()
-                            }
-                            .buttonStyle(.bordered)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                            historyRow(for: item, at: index)
                         }
-                        .padding(8)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(4)
+                    }
+                    .padding()
+                    .id(listTopScrollID)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .clipboardHistoryKeyCommand)) { notification in
+                    guard let command = notification.object as? HistoryKeyCommand else { return }
+                    switch command {
+                    case .moveUp:
+                        moveHighlight(by: -1, proxy: proxy)
+                    case .moveDown:
+                        moveHighlight(by: 1, proxy: proxy)
+                    case .copyHighlighted:
+                        if let index = highlightedIndex { copyAndClose(filteredItems[index]) }
+                    case .deleteHighlighted:
+                        deleteHighlightedItem()
+                    case .copyVisibleItem(let index):
+                        let visibleItems = filteredItems
+                        if index < visibleItems.count { copyAndClose(visibleItems[index]) }
                     }
                 }
-                .padding()
+                .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
+                    searchText = ""
+                    clearHighlight(proxy: proxy)
+                    isSearchFocused = false
+                    DispatchQueue.main.async {
+                        isSearchFocused = true
+                    }
+                }
+                .onChange(of: searchText) { _ in
+                    clearHighlight(proxy: proxy)
+                }
             }
         }
         .frame(width: 400, height: 550)
@@ -1018,13 +1059,106 @@ struct HistoryView: View {
             showingSettings = false
             showingAbout = false
         }
-        .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
-            searchText = ""
-            isSearchFocused = false
-            DispatchQueue.main.async {
-                isSearchFocused = true
-            }
+        .onChange(of: manager.items.map(\.id)) { _ in
+            // Drop the highlight if its item left the visible list; never add one here.
+            if highlightedItemID != nil && highlightedIndex == nil { setHighlight(nil) }
         }
+        .onChange(of: showingSettings) { _ in navigationState.isListFocused = false }
+        .onChange(of: showingAbout) { _ in navigationState.isListFocused = false }
+    }
+
+    private var highlightedIndex: Int? {
+        guard let highlightedItemID else { return nil }
+        return filteredItems.firstIndex { $0.id == highlightedItemID }
+    }
+
+    /// The one copy path: Copy button, row click, Return and ⌘1–⌘9.
+    private func copyAndClose(_ item: ClipboardItem) {
+        manager.copyItem(item)
+        (NSApp.delegate as? AppDelegate)?.closePopover()
+    }
+
+    /// Every highlight change that isn't hover. Remembering the cursor position lets hover
+    /// ignore rows that move under a still cursor (opening, searching, deleting, scrolling).
+    private func setHighlight(_ id: UUID?) {
+        highlightedItemID = id
+        mouseLocationAtLastProgrammaticHighlight = NSEvent.mouseLocation
+    }
+
+    private func moveHighlight(by offset: Int, proxy: ScrollViewProxy) {
+        let visibleItems = filteredItems
+        guard !visibleItems.isEmpty else { return }
+        navigationState.isListFocused = true
+        let newIndex = highlightedIndex.map { min(max($0 + offset, 0), visibleItems.count - 1) } ?? 0
+        let newID = visibleItems[newIndex].id
+        setHighlight(newID)
+        proxy.scrollTo(newID)
+    }
+
+    private func deleteHighlightedItem() {
+        guard let index = highlightedIndex else { return }
+        manager.deleteItem(filteredItems[index])
+        let remainingItems = filteredItems
+        setHighlight(remainingItems.isEmpty ? nil : remainingItems[min(index, remainingItems.count - 1)].id)
+    }
+
+    private func clearHighlight(proxy: ScrollViewProxy) {
+        navigationState.isListFocused = false
+        setHighlight(nil)
+        proxy.scrollTo(listTopScrollID, anchor: .top)
+    }
+
+    @ViewBuilder
+    private func historyRow(for item: ClipboardItem, at index: Int) -> some View {
+        let isHighlighted = item.id == highlightedItemID
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(item.timeAgo)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    if index < 9 {
+                        Text("⌘\(index + 1)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Text(item.displayText)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 8)
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
+            .contentShape(Rectangle())
+            .onTapGesture { copyAndClose(item) }
+
+            Button(action: { manager.deleteItem(item) }) {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
+            .padding(.trailing, 8)
+
+            Button("Copy") {
+                copyAndClose(item)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(.trailing, 8)
+        .background(isHighlighted
+            ? Color.accentColor.opacity(navigationState.isListFocused ? 0.35 : 0.15)
+            : Color(NSColor.controlBackgroundColor))
+        .cornerRadius(4)
+        .onHover { inside in
+            guard inside, NSEvent.mouseLocation != mouseLocationAtLastProgrammaticHighlight else { return }
+            highlightedItemID = item.id
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isHighlighted ? .isSelected : [])
     }
 }
 
@@ -1164,7 +1298,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
     let manager = ClipboardManager()
+    let navigationState = HistoryNavigationState()
     private var outsideClickMonitor: Any?
+    private var historyKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Create status bar item
@@ -1179,7 +1315,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create popover
         popover = NSPopover()
-        popover?.contentViewController = NSHostingController(rootView: HistoryView(manager: manager))
+        popover?.contentViewController = NSHostingController(rootView: HistoryView(manager: manager, navigationState: navigationState))
         popover?.behavior = .transient
         popover?.delegate = self
 
@@ -1271,15 +1407,83 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             outsideClickMonitor = nil
         }
     }
+
+    /// Keyboard navigation in the history list. The search field keeps keyboard focus, and it
+    /// would eat the arrow keys, so they're caught here (`onKeyPress` needs macOS 14).
+    private func startHistoryKeyMonitor() {
+        guard historyKeyMonitor == nil else { return }
+        historyKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            return self.handleHistoryEvent(event)
+        }
+    }
+
+    private func stopHistoryKeyMonitor() {
+        if let monitor = historyKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            historyKeyMonitor = nil
+        }
+    }
+
+    /// Returns nil for a key it handled, the event otherwise.
+    private func handleHistoryEvent(_ event: NSEvent) -> NSEvent? {
+        guard popover?.isShown == true,
+              let popoverWindow = popover?.contentViewController?.view.window,
+              event.window === popoverWindow,
+              popoverWindow.attachedSheet == nil else { return event }
+
+        if event.type == .leftMouseDown {
+            // Any click (e.g. back into the search field) hands ⌘⌫ back to the field.
+            navigationState.isListFocused = false
+            return event
+        }
+
+        // Let input methods (Japanese, dead keys) use Return and the arrows while composing.
+        if (popoverWindow.firstResponder as? NSTextView)?.hasMarkedText() == true { return event }
+
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let command: HistoryKeyCommand
+
+        switch Int(event.keyCode) {
+        case kVK_UpArrow where modifiers.isEmpty:
+            command = .moveUp
+        case kVK_DownArrow where modifiers.isEmpty:
+            command = .moveDown
+        case kVK_Return where modifiers.isEmpty, kVK_ANSI_KeypadEnter where modifiers.isEmpty:
+            if event.isARepeat { return nil }
+            command = .copyHighlighted
+        case kVK_Escape where modifiers.isEmpty:
+            if event.isARepeat { return nil }
+            closePopover()
+            return nil
+        case kVK_Delete where modifiers == .command:
+            // Only while the list has focus; otherwise it's "delete to start of line" in the field.
+            guard navigationState.isListFocused else { return event }
+            // A held ⌘⌫ deletes one item and never reaches the field.
+            if event.isARepeat { return nil }
+            command = .deleteHighlighted
+        default:
+            guard modifiers == .command,
+                  let characters = event.charactersIgnoringModifiers?.lowercased(),
+                  let index = HistoryKeyCommand.quickPickIndexByCharacter[characters] else { return event }
+            if event.isARepeat { return nil }
+            command = .copyVisibleItem(index: index)
+        }
+
+        NotificationCenter.default.post(name: .clipboardHistoryKeyCommand, object: command)
+        return nil
+    }
 }
 
 extension AppDelegate: NSPopoverDelegate {
     func popoverDidShow(_ notification: Notification) {
         startOutsideClickMonitor()
+        startHistoryKeyMonitor()
     }
 
     func popoverDidClose(_ notification: Notification) {
         stopOutsideClickMonitor()
+        stopHistoryKeyMonitor()
     }
 }
 
