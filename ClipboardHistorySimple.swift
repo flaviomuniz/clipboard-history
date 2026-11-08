@@ -1112,7 +1112,7 @@ struct HistoryView: View {
     @ViewBuilder
     private func historyRow(for item: ClipboardItem, at index: Int) -> some View {
         let isHighlighted = item.id == highlightedItemID
-        HStack {
+        HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(item.timeAgo)
@@ -1129,6 +1129,9 @@ struct HistoryView: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.vertical, 8)
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
             .contentShape(Rectangle())
             .onTapGesture { copyAndClose(item) }
 
@@ -1139,13 +1142,14 @@ struct HistoryView: View {
             }
             .buttonStyle(.plain)
             .help("Delete")
+            .padding(.trailing, 8)
 
             Button("Copy") {
                 copyAndClose(item)
             }
             .buttonStyle(.bordered)
         }
-        .padding(8)
+        .padding(.trailing, 8)
         .background(isHighlighted
             ? Color.accentColor.opacity(navigationState.isListFocused ? 0.35 : 0.15)
             : Color(NSColor.controlBackgroundColor))
