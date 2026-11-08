@@ -450,6 +450,7 @@ final class HotkeyManager: ObservableObject {
 
 extension Notification.Name {
     static let clipboardPopoverDidOpen = Notification.Name("clipboardPopoverDidOpen")
+    static let clipboardHistoryKeyCommand = Notification.Name("clipboardHistoryKeyCommand")
 }
 
 // MARK: - Shortcut Recorder
@@ -918,9 +919,30 @@ struct SettingsWindowReader: NSViewRepresentable {
     }
 }
 
+// MARK: - History Keyboard Navigation
+enum HistoryKeyCommand {
+    case moveUp, moveDown, copyHighlighted, deleteHighlighted
+    case copyVisibleItem(index: Int) // 0-based, from ⌘1–⌘9
+
+    /// Characters that pick the Nth visible item with ⌘. Matched by character, not key code,
+    /// so ⌘-letter shortcuts on other layouts are never taken.
+    static let quickPickIndexByCharacter: [String: Int] = [
+        "1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5, "7": 6, "8": 7, "9": 8,
+        // French AZERTY top row without Shift
+        "&": 0, "é": 1, "\"": 2, "'": 3, "(": 4, "-": 5, "è": 6, "_": 7, "ç": 8
+    ]
+}
+
+/// Shared by AppDelegate's key monitor and HistoryView. The monitor needs to know
+/// whether ⌘⌫ belongs to the list or to the search field.
+final class HistoryNavigationState: ObservableObject {
+    @Published var isListFocused = false
+}
+
 // MARK: - History View
 struct HistoryView: View {
     @ObservedObject var manager: ClipboardManager
+    @ObservedObject var navigationState: HistoryNavigationState
     @State private var searchText = ""
     @State private var showingAbout = false
     @State private var showingSettings = false
@@ -1177,7 +1199,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
     let manager = ClipboardManager()
+    let navigationState = HistoryNavigationState()
     private var outsideClickMonitor: Any?
+    private var historyKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Create status bar item
@@ -1192,7 +1216,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create popover
         popover = NSPopover()
-        popover?.contentViewController = NSHostingController(rootView: HistoryView(manager: manager))
+        popover?.contentViewController = NSHostingController(rootView: HistoryView(manager: manager, navigationState: navigationState))
         popover?.behavior = .transient
         popover?.delegate = self
 
@@ -1284,15 +1308,82 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             outsideClickMonitor = nil
         }
     }
+
+    /// Keyboard navigation in the history list. The search field keeps keyboard focus, and it
+    /// would eat the arrow keys, so they're caught here (`onKeyPress` needs macOS 14).
+    private func startHistoryKeyMonitor() {
+        guard historyKeyMonitor == nil else { return }
+        historyKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            return self.handleHistoryEvent(event)
+        }
+    }
+
+    private func stopHistoryKeyMonitor() {
+        if let monitor = historyKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            historyKeyMonitor = nil
+        }
+    }
+
+    /// Returns nil for a key it handled, the event otherwise.
+    private func handleHistoryEvent(_ event: NSEvent) -> NSEvent? {
+        guard popover?.isShown == true,
+              let popoverWindow = popover?.contentViewController?.view.window,
+              event.window === popoverWindow,
+              popoverWindow.attachedSheet == nil else { return event }
+
+        if event.type == .leftMouseDown {
+            // Any click (e.g. back into the search field) hands ⌘⌫ back to the field.
+            navigationState.isListFocused = false
+            return event
+        }
+
+        // Let input methods (Japanese, dead keys) use Return and the arrows while composing.
+        if (popoverWindow.firstResponder as? NSTextView)?.hasMarkedText() == true { return event }
+
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let command: HistoryKeyCommand
+
+        switch Int(event.keyCode) {
+        case kVK_UpArrow where modifiers.isEmpty:
+            command = .moveUp
+        case kVK_DownArrow where modifiers.isEmpty:
+            command = .moveDown
+        case kVK_Return where modifiers.isEmpty, kVK_ANSI_KeypadEnter where modifiers.isEmpty:
+            guard !event.isARepeat else { return event }
+            command = .copyHighlighted
+        case kVK_Escape where modifiers.isEmpty:
+            guard !event.isARepeat else { return event }
+            closePopover()
+            return nil
+        case kVK_Delete where modifiers == .command:
+            // Only while the list has focus; otherwise it's "delete to start of line" in the field.
+            guard navigationState.isListFocused else { return event }
+            // A held ⌘⌫ deletes one item and never reaches the field.
+            if event.isARepeat { return nil }
+            command = .deleteHighlighted
+        default:
+            guard modifiers == .command, !event.isARepeat,
+                  let characters = event.charactersIgnoringModifiers,
+                  let index = HistoryKeyCommand.quickPickIndexByCharacter[characters] else { return event }
+            command = .copyVisibleItem(index: index)
+        }
+
+        NotificationCenter.default.post(name: .clipboardHistoryKeyCommand, object: command)
+        return nil
+    }
 }
 
 extension AppDelegate: NSPopoverDelegate {
     func popoverDidShow(_ notification: Notification) {
         startOutsideClickMonitor()
+        startHistoryKeyMonitor()
     }
 
     func popoverDidClose(_ notification: Notification) {
         stopOutsideClickMonitor()
+        stopHistoryKeyMonitor()
     }
 }
 
