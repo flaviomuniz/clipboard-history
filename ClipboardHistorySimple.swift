@@ -1129,6 +1129,8 @@ struct HistoryView: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { copyAndClose(item) }
 
             Button(action: { manager.deleteItem(item) }) {
                 Image(systemName: "trash")
@@ -1148,16 +1150,12 @@ struct HistoryView: View {
             ? Color.accentColor.opacity(navigationState.isListFocused ? 0.35 : 0.15)
             : Color(NSColor.controlBackgroundColor))
         .cornerRadius(4)
-        .contentShape(Rectangle())
-        .onTapGesture { copyAndClose(item) }
         .onHover { inside in
             guard inside, NSEvent.mouseLocation != mouseLocationAtLastProgrammaticHighlight else { return }
             highlightedItemID = item.id
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isHighlighted ? .isSelected : [])
-        .accessibilityAction(named: "Copy") { copyAndClose(item) }
-        .accessibilityAction(named: "Delete") { manager.deleteItem(item) }
     }
 }
 
