@@ -11,9 +11,10 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Persistent Storage** - History is saved to disk and survives app restarts
 - **Launch at Login** - Option to start automatically when you log in
 - **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
+- **Size Limit** - Copies over 100 KB aren't saved. You can change the limit or turn it off in Settings
 - **Global Shortcut** - Open history from anywhere with ⇧⌘V (Cmd+Shift+V), changeable in Settings
 - **Keyboard Navigation** - Move through the list with ↑ ↓, copy with Return or ⌘1 to ⌘9, delete with ⌘⌫, close with Esc
-- **Settings** - Configurable history limit, launch at login, keyboard shortcut, ignored apps, clear history
+- **Settings** - Configurable history limit, max item size, launch at login, keyboard shortcut, ignored apps, clear history
 - **Menu Bar App** - Lives in your menu bar, out of the way
 - **Lightweight & Fast** - Single-file Swift app, minimal resource usage
 - **Privacy First** - All data stored locally, nothing sent anywhere
@@ -65,7 +66,7 @@ The search box has focus when the history opens, so you can type to filter right
 
 ## How It Works
 
-ClipboardHistory monitors your system clipboard every 0.5 seconds. When it detects a new text copy, it saves it to a local JSON file at `~/Library/Application Support/ClipboardHistory/history.json`. The history persists across app restarts and system reboots.
+ClipboardHistory monitors your system clipboard every 0.5 seconds. When it detects a new text copy, it saves it to a local JSON file at `~/Library/Application Support/ClipboardHistory/history.json`. The history persists across app restarts and system reboots. Copies over the size limit (100 KB by default, changeable in Settings) are skipped entirely, so every item in the history pastes back exactly as it was copied.
 
 Copies marked as passwords by password managers are never saved, and copies from ignored apps are skipped. When an app doesn't say where a copy came from, the source is guessed from the frontmost app, so source-app detection is best-effort. The password marker is the main protection.
 
