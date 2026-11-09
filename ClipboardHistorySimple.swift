@@ -824,6 +824,15 @@ struct SettingsView: View {
                     }
 
                     HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.secondary)
+                            .frame(width: 20)
+                        Text("Currently storing \(manager.items.count) items")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
                         Image(systemName: "doc.text")
                             .foregroundColor(.blue)
                             .frame(width: 20)
@@ -857,15 +866,6 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                             .frame(width: 20)
                         Text(maximumItemSizeCaption)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Image(systemName: "info.circle")
-                            .foregroundColor(.secondary)
-                            .frame(width: 20)
-                        Text("Currently storing \(manager.items.count) items")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
