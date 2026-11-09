@@ -67,6 +67,45 @@ enum Privacy {
     ]
 }
 
+// MARK: - Item Size Limit
+enum ItemSizeLimit {
+    static let defaultsKey = "maximumItemSizeInBytes"
+    /// Stored in UserDefaults to mean "no limit". A missing key (0) and any other value that isn't positive mean the default.
+    static let noLimitStoredValue = -1
+    static let defaultBytes = 100 * 1024
+
+    /// Slider stops, smallest first. `nil` means "No limit" and must stay last.
+    static let stops: [Int?] = [
+        50 * 1024,
+        100 * 1024,
+        250 * 1024,
+        500 * 1024,
+        1024 * 1024,
+        5 * 1024 * 1024,
+        10 * 1024 * 1024,
+        nil
+    ]
+
+    /// The byte stop closest to `bytes`; ties go to the smaller stop.
+    static func nearestStop(to bytes: Int) -> Int {
+        let byteStops = stops.compactMap { $0 }
+        var nearestByteStop = byteStops[0]
+        for byteStop in byteStops where abs(byteStop - bytes) < abs(nearestByteStop - bytes) {
+            nearestByteStop = byteStop
+        }
+        return nearestByteStop
+    }
+
+    static func label(for bytes: Int?) -> String {
+        guard let bytes else { return "No limit" }
+        let bytesPerMegabyte = 1024 * 1024
+        if bytes >= bytesPerMegabyte && bytes % bytesPerMegabyte == 0 {
+            return "\(bytes / bytesPerMegabyte) MB"
+        }
+        return "\(bytes / 1024) KB"
+    }
+}
+
 // MARK: - Persistence
 struct PersistenceManager {
     private static var storageURL: URL {
@@ -102,6 +141,12 @@ class ClipboardManager: ObservableObject {
     @Published var ignoredAppBundleIDs: [String] {
         didSet { UserDefaults.standard.set(ignoredAppBundleIDs, forKey: Privacy.ignoredAppsDefaultsKey) }
     }
+    /// Copies larger than this many UTF-8 bytes are not saved; `nil` means no limit.
+    @Published var maximumItemSizeInBytes: Int? {
+        didSet {
+            UserDefaults.standard.set(maximumItemSizeInBytes ?? ItemSizeLimit.noLimitStoredValue, forKey: ItemSizeLimit.defaultsKey)
+        }
+    }
     private var timer: Timer?
     private var lastChangeCount = 0
     private var frontmostBundleIDAtLastPoll: String?
@@ -115,6 +160,15 @@ class ClipboardManager: ObservableObject {
             self.ignoredAppBundleIDs = Privacy.defaultIgnoredBundleIDs
         } else {
             self.ignoredAppBundleIDs = UserDefaults.standard.stringArray(forKey: Privacy.ignoredAppsDefaultsKey) ?? []
+        }
+        let savedMaximumItemSize = UserDefaults.standard.integer(forKey: ItemSizeLimit.defaultsKey)
+        if savedMaximumItemSize == ItemSizeLimit.noLimitStoredValue {
+            self.maximumItemSizeInBytes = nil
+        } else if savedMaximumItemSize > 0 {
+            // Snap hand-set values to a slider stop so the slider, its label and the enforced cap agree.
+            self.maximumItemSizeInBytes = ItemSizeLimit.nearestStop(to: savedMaximumItemSize)
+        } else {
+            self.maximumItemSizeInBytes = ItemSizeLimit.defaultBytes
         }
         self.items = PersistenceManager.load()
     }
@@ -171,6 +225,8 @@ class ClipboardManager: ObservableObject {
         }
 
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
+            // Oversized copies (logs, dumps, base64) are skipped, never truncated: a cut-off copy would paste back incomplete.
+            if let maximumItemSizeInBytes, string.utf8.count > maximumItemSizeInBytes { return }
             let item = ClipboardItem(content: string, timestamp: Date(), sourceBundleID: sourceBundleID)
             // The timer runs on the main run loop; mutate synchronously so copies from the list and polled copies stay in order.
             items.removeAll { $0.content == item.content }
@@ -576,6 +632,27 @@ struct SettingsView: View {
 
     private let historyOptions = [25, 50, 100, 200]
 
+    /// Binds the item size slider to an index into `ItemSizeLimit.stops`.
+    private var maximumItemSizeStopIndex: Binding<Double> {
+        Binding(
+            get: {
+                let stopIndex = ItemSizeLimit.stops.firstIndex(of: manager.maximumItemSizeInBytes)
+                    ?? ItemSizeLimit.stops.firstIndex(of: ItemSizeLimit.defaultBytes)
+                    ?? 0
+                return Double(stopIndex)
+            },
+            set: { newStopIndex in
+                let clampedStopIndex = min(max(Int(newStopIndex.rounded()), 0), ItemSizeLimit.stops.count - 1)
+                manager.maximumItemSizeInBytes = ItemSizeLimit.stops[clampedStopIndex]
+            }
+        )
+    }
+
+    private var maximumItemSizeCaption: String {
+        guard let maximumItemSizeInBytes = manager.maximumItemSizeInBytes else { return "Size limit is off" }
+        return "Copies over \(ItemSizeLimit.label(for: maximumItemSizeInBytes)) aren't saved"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -751,6 +828,44 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                             .frame(width: 20)
                         Text("Currently storing \(manager.items.count) items")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Text("Max Item Size")
+                        Spacer()
+                        Text(ItemSizeLimit.label(for: manager.maximumItemSizeInBytes))
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+
+                    Slider(
+                        value: maximumItemSizeStopIndex,
+                        in: 0...Double(ItemSizeLimit.stops.count - 1),
+                        step: 1
+                    ) {
+                        Text("Max Item Size")
+                    } minimumValueLabel: {
+                        Text(ItemSizeLimit.label(for: ItemSizeLimit.stops[0]))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } maximumValueLabel: {
+                        Text(ItemSizeLimit.label(for: ItemSizeLimit.stops[ItemSizeLimit.stops.count - 1]))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .labelsHidden()
+                    .padding(.leading, 28)
+
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.secondary)
+                            .frame(width: 20)
+                        Text(maximumItemSizeCaption)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
