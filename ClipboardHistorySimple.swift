@@ -649,7 +649,7 @@ struct SettingsView: View {
     }
 
     private var maximumItemSizeCaption: String {
-        guard let maximumItemSizeInBytes = manager.maximumItemSizeInBytes else { return "All copies are saved" }
+        guard let maximumItemSizeInBytes = manager.maximumItemSizeInBytes else { return "Size limit is off" }
         return "Copies over \(ItemSizeLimit.label(for: maximumItemSizeInBytes)) aren't saved"
     }
 
