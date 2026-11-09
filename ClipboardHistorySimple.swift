@@ -632,6 +632,27 @@ struct SettingsView: View {
 
     private let historyOptions = [25, 50, 100, 200]
 
+    /// Binds the item size slider to an index into `ItemSizeLimit.stops`.
+    private var maximumItemSizeStopIndex: Binding<Double> {
+        Binding(
+            get: {
+                let stopIndex = ItemSizeLimit.stops.firstIndex(of: manager.maximumItemSizeInBytes)
+                    ?? ItemSizeLimit.stops.firstIndex(of: ItemSizeLimit.defaultBytes)
+                    ?? 0
+                return Double(stopIndex)
+            },
+            set: { newStopIndex in
+                let clampedStopIndex = min(max(Int(newStopIndex.rounded()), 0), ItemSizeLimit.stops.count - 1)
+                manager.maximumItemSizeInBytes = ItemSizeLimit.stops[clampedStopIndex]
+            }
+        )
+    }
+
+    private var maximumItemSizeCaption: String {
+        guard let maximumItemSizeInBytes = manager.maximumItemSizeInBytes else { return "All copies are saved" }
+        return "Copies over \(ItemSizeLimit.label(for: maximumItemSizeInBytes)) aren't saved"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -800,6 +821,44 @@ struct SettingsView: View {
                             }
                         }
                         .frame(width: 120)
+                    }
+
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Text("Max Item Size")
+                        Spacer()
+                        Text(ItemSizeLimit.label(for: manager.maximumItemSizeInBytes))
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+
+                    Slider(
+                        value: maximumItemSizeStopIndex,
+                        in: 0...Double(ItemSizeLimit.stops.count - 1),
+                        step: 1
+                    ) {
+                        Text("Max Item Size")
+                    } minimumValueLabel: {
+                        Text(ItemSizeLimit.label(for: ItemSizeLimit.stops[0]))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } maximumValueLabel: {
+                        Text(ItemSizeLimit.label(for: ItemSizeLimit.stops[ItemSizeLimit.stops.count - 1]))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .labelsHidden()
+                    .padding(.leading, 28)
+
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.secondary)
+                            .frame(width: 20)
+                        Text(maximumItemSizeCaption)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
 
                     HStack {
