@@ -86,6 +86,12 @@ enum ItemSizeLimit {
         nil
     ]
 
+    /// True when `content` is larger than `limit` UTF-8 bytes. A `nil` limit means no limit.
+    static func exceeds(_ content: String, limit: Int?) -> Bool {
+        guard let limit else { return false }
+        return content.utf8.count > limit
+    }
+
     /// The byte stop closest to `bytes`; ties go to the smaller stop.
     static func nearestStop(to bytes: Int) -> Int {
         let byteStops = stops.compactMap { $0 }
@@ -226,7 +232,7 @@ class ClipboardManager: ObservableObject {
 
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
             // Oversized copies (logs, dumps, base64) are skipped, never truncated: a cut-off copy would paste back incomplete.
-            if let maximumItemSizeInBytes, string.utf8.count > maximumItemSizeInBytes { return }
+            if ItemSizeLimit.exceeds(string, limit: maximumItemSizeInBytes) { return }
             let item = ClipboardItem(content: string, timestamp: Date(), sourceBundleID: sourceBundleID)
             // The timer runs on the main run loop; mutate synchronously so copies from the list and polled copies stay in order.
             items.removeAll { $0.content == item.content }
@@ -295,6 +301,28 @@ class ClipboardManager: ObservableObject {
             guard let sourceBundleID = item.sourceBundleID else { return false }
             return ignoredAppBundleIDs.contains(sourceBundleID)
         }
+        PersistenceManager.save(items)
+    }
+
+    /// Saved items larger than the current Max Item Size.
+    var itemsOverSizeLimitCount: Int {
+        items.filter { ItemSizeLimit.exceeds($0.content, limit: maximumItemSizeInBytes) }.count
+    }
+
+    func deleteItemsOverSizeLimit() {
+        let countBefore = items.count
+        items.removeAll { ItemSizeLimit.exceeds($0.content, limit: maximumItemSizeInBytes) }
+        if items.count != countBefore { PersistenceManager.save(items) }
+    }
+
+    /// Oldest saved items beyond the current History Limit.
+    var itemsOverHistoryLimitCount: Int {
+        max(items.count - historyLimit, 0)
+    }
+
+    func deleteItemsOverHistoryLimit() {
+        guard items.count > historyLimit else { return }
+        items = Array(items.prefix(historyLimit))
         PersistenceManager.save(items)
     }
 }
