@@ -11,7 +11,7 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Persistent Storage** - History is saved to disk and survives app restarts
 - **Launch at Login** - Option to start automatically when you log in
 - **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
-- **Size Limit** - Copies over 100 KB aren't saved. You can change the limit or turn it off in Settings. Lowering it, or the history limit, offers to delete the saved items that no longer fit
+- **Size Limit** - Copies over 100 KB aren't saved. You can change the limit or turn it off in Settings. Lowering it offers to delete the saved items over the new limit
 - **Global Shortcut** - Open history from anywhere with ⇧⌘V (Cmd+Shift+V), changeable in Settings
 - **Keyboard Navigation** - Move through the list with ↑ ↓, copy with Return or ⌘1 to ⌘9, delete with ⌘⌫, close with Esc
 - **Settings** - Configurable history limit, max item size, launch at login, keyboard shortcut, ignored apps, clear history

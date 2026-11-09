@@ -314,17 +314,6 @@ class ClipboardManager: ObservableObject {
         items.removeAll { ItemSizeLimit.exceeds($0.content, limit: maximumItemSizeInBytes) }
         if items.count != countBefore { PersistenceManager.save(items) }
     }
-
-    /// Oldest saved items beyond the current History Limit.
-    var itemsOverHistoryLimitCount: Int {
-        max(items.count - historyLimit, 0)
-    }
-
-    func deleteItemsOverHistoryLimit() {
-        guard items.count > historyLimit else { return }
-        items = Array(items.prefix(historyLimit))
-        PersistenceManager.save(items)
-    }
 }
 
 // MARK: - Hotkey
@@ -655,9 +644,7 @@ struct SettingsView: View {
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
     @State private var showSizeTrimConfirmation = false
-    @State private var showHistoryTrimConfirmation = false
     @State private var previousMaximumItemSizeInBytes: Int?
-    @State private var previousHistoryLimit = 0
     @State private var settingsWindow: NSWindow?
     @State private var isRecordingShortcut = false
     @ObservedObject private var hotkeyManager = HotkeyManager.shared
@@ -873,26 +860,6 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    if showHistoryTrimConfirmation && manager.itemsOverHistoryLimitCount > 0 {
-                        HStack {
-                            Image(systemName: "trash")
-                                .foregroundColor(.red)
-                                .frame(width: 20)
-                            Text("Delete the \(manager.itemsOverHistoryLimitCount) oldest \(manager.itemsOverHistoryLimitCount == 1 ? "item" : "items") over the \(manager.historyLimit)-item limit?")
-                                .foregroundColor(.red)
-                                .font(.caption)
-                            Spacer()
-                            Button("Keep") {
-                                showHistoryTrimConfirmation = false
-                            }
-                            Button("Delete") {
-                                manager.deleteItemsOverHistoryLimit()
-                                showHistoryTrimConfirmation = false
-                            }
-                            .foregroundColor(.red)
-                        }
-                    }
-
                     HStack {
                         Image(systemName: "doc.text")
                             .foregroundColor(.blue)
@@ -1000,15 +967,10 @@ struct SettingsView: View {
         .onAppear {
             refreshLaunchAtLoginState()
             previousMaximumItemSizeInBytes = manager.maximumItemSizeInBytes
-            previousHistoryLimit = manager.historyLimit
         }
         .onChange(of: manager.maximumItemSizeInBytes) { newLimit in
             showSizeTrimConfirmation = Self.isStricter(newLimit, than: previousMaximumItemSizeInBytes)
             previousMaximumItemSizeInBytes = newLimit
-        }
-        .onChange(of: manager.historyLimit) { newLimit in
-            showHistoryTrimConfirmation = Self.isStricter(newLimit, than: previousHistoryLimit)
-            previousHistoryLimit = newLimit
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshLaunchAtLoginState()
