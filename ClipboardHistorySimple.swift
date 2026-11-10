@@ -86,6 +86,12 @@ enum ItemSizeLimit {
         nil
     ]
 
+    /// True when `content` is larger than `limit` UTF-8 bytes. A `nil` limit means no limit.
+    static func exceeds(_ content: String, limit: Int?) -> Bool {
+        guard let limit else { return false }
+        return content.utf8.count > limit
+    }
+
     /// The byte stop closest to `bytes`; ties go to the smaller stop.
     static func nearestStop(to bytes: Int) -> Int {
         let byteStops = stops.compactMap { $0 }
@@ -226,7 +232,7 @@ class ClipboardManager: ObservableObject {
 
         if let string = pasteboard.string(forType: .string), !string.isEmpty {
             // Oversized copies (logs, dumps, base64) are skipped, never truncated: a cut-off copy would paste back incomplete.
-            if let maximumItemSizeInBytes, string.utf8.count > maximumItemSizeInBytes { return }
+            if ItemSizeLimit.exceeds(string, limit: maximumItemSizeInBytes) { return }
             let item = ClipboardItem(content: string, timestamp: Date(), sourceBundleID: sourceBundleID)
             // The timer runs on the main run loop; mutate synchronously so copies from the list and polled copies stay in order.
             items.removeAll { $0.content == item.content }
@@ -296,6 +302,17 @@ class ClipboardManager: ObservableObject {
             return ignoredAppBundleIDs.contains(sourceBundleID)
         }
         PersistenceManager.save(items)
+    }
+
+    /// Saved items larger than the current Max Item Size.
+    var itemsOverSizeLimitCount: Int {
+        items.filter { ItemSizeLimit.exceeds($0.content, limit: maximumItemSizeInBytes) }.count
+    }
+
+    func deleteItemsOverSizeLimit() {
+        let countBefore = items.count
+        items.removeAll { ItemSizeLimit.exceeds($0.content, limit: maximumItemSizeInBytes) }
+        if items.count != countBefore { PersistenceManager.save(items) }
     }
 }
 
@@ -626,11 +643,22 @@ struct SettingsView: View {
     @State private var launchAtLoginErrorMessage: String?
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
+    @State private var showSizeTrimConfirmation = false
+    @State private var previousMaximumItemSizeInBytes: Int?
     @State private var settingsWindow: NSWindow?
     @State private var isRecordingShortcut = false
     @ObservedObject private var hotkeyManager = HotkeyManager.shared
 
     private let historyOptions = [25, 50, 100, 200]
+
+    /// True when `newLimit` lets fewer items through than `oldLimit`; `nil` means no limit.
+    private static func isStricter(_ newLimit: Int?, than oldLimit: Int?) -> Bool {
+        switch (newLimit, oldLimit) {
+        case (nil, _): return false
+        case (_?, nil): return true
+        case let (new?, old?): return new < old
+        }
+    }
 
     /// Binds the item size slider to an index into `ItemSizeLimit.stops`.
     private var maximumItemSizeStopIndex: Binding<Double> {
@@ -869,6 +897,26 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+
+                    if showSizeTrimConfirmation && manager.itemsOverSizeLimitCount > 0 {
+                        HStack {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                                .frame(width: 20)
+                            Text("Delete \(manager.itemsOverSizeLimitCount) saved \(manager.itemsOverSizeLimitCount == 1 ? "item" : "items") over \(ItemSizeLimit.label(for: manager.maximumItemSizeInBytes))?")
+                                .foregroundColor(.red)
+                                .font(.caption)
+                            Spacer()
+                            Button("Keep") {
+                                showSizeTrimConfirmation = false
+                            }
+                            Button("Delete") {
+                                manager.deleteItemsOverSizeLimit()
+                                showSizeTrimConfirmation = false
+                            }
+                            .foregroundColor(.red)
+                        }
+                    }
                 }
                 .padding(.horizontal)
 
@@ -916,7 +964,14 @@ struct SettingsView: View {
         }
         .frame(width: 350, height: 540)
         .background(SettingsWindowReader { settingsWindow = $0 })
-        .onAppear { refreshLaunchAtLoginState() }
+        .onAppear {
+            refreshLaunchAtLoginState()
+            previousMaximumItemSizeInBytes = manager.maximumItemSizeInBytes
+        }
+        .onChange(of: manager.maximumItemSizeInBytes) { newLimit in
+            showSizeTrimConfirmation = Self.isStricter(newLimit, than: previousMaximumItemSizeInBytes)
+            previousMaximumItemSizeInBytes = newLimit
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshLaunchAtLoginState()
         }
