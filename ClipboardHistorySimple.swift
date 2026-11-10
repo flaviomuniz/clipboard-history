@@ -123,7 +123,20 @@ struct PersistenceManager {
         return appDir.appendingPathComponent("history.json")
     }
 
+    /// Serial, so saves reach the disk in the order they were requested and the file never goes back to an older list.
+    private static let saveQueue = DispatchQueue(label: "com.clipboardhistory.app.persistence", qos: .utility)
+
+    /// Encodes and writes in the background. `items` is a value snapshot, so later changes on the main thread don't affect it.
     static func save(_ items: [ClipboardItem]) {
+        saveQueue.async { write(items) }
+    }
+
+    /// Writes after every earlier save has finished, and returns only once this one is on disk. For quitting; call from the main thread only.
+    static func saveAndWait(_ items: [ClipboardItem]) {
+        saveQueue.sync { write(items) }
+    }
+
+    private static func write(_ items: [ClipboardItem]) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(items) else { return }
@@ -1504,7 +1517,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        PersistenceManager.save(manager.items)
+        PersistenceManager.saveAndWait(manager.items)
     }
 
     /// Accessory apps show no menu bar, but text fields still get ⌘X/⌘C/⌘V/⌘A/⌘Z through
