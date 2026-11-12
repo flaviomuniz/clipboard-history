@@ -79,8 +79,12 @@ ClipboardHistory/
 ├── create_icon.swift               # Icon generation script
 ├── ClipboardHistory.icns           # App icon
 ├── images/                         # Screenshots
+├── docs/                           # GitHub Pages site
+├── .github/                        # CI workflow, issue and PR templates
 ├── LICENSE                         # MIT License
 ├── CONTRIBUTING.md                 # Contribution guidelines
+├── CODE_OF_CONDUCT.md              # Contributor Covenant
+├── SECURITY.md                     # How to report vulnerabilities
 └── README.md                       # This file
 ```
 
@@ -104,7 +108,7 @@ ClipboardHistory/
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
@@ -113,7 +117,7 @@ This project is open-source under the [MIT License](LICENSE).
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/flaviomuniz/clipboard-history/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/flaviomuniz/clipboard-history/discussions)
+- **Security**: see [SECURITY.md](SECURITY.md) to report a vulnerability privately
 
 ## Credits
 
