@@ -2,6 +2,8 @@
 
 Thanks for your interest in contributing! Here's how you can help.
 
+By taking part in this project you agree to follow its [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Getting Started
 
 1. Fork the repository
@@ -46,6 +48,7 @@ Thanks for your interest in contributing! Here's how you can help.
 2. Open a Pull Request against `main`
 3. Describe what your changes do and why
 4. Make sure the CI build passes
+5. Fill in the pull request template
 
 ## Code Style
 
@@ -56,11 +59,12 @@ Thanks for your interest in contributing! Here's how you can help.
 
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/flaviomuniz/clipboard-history/issues)
+- Open a [GitHub Issue](https://github.com/flaviomuniz/clipboard-history/issues/new/choose) and pick the bug report form, which asks for everything below
 - Include your macOS version
 - Describe the steps to reproduce the problem
 - Include any error messages or screenshots
+- For security problems, follow [SECURITY.md](SECURITY.md) instead of opening a public issue
 
 ## Ideas & Feature Requests
 
-Check the [Roadmap](README.md#roadmap) for planned features. If you have a new idea, open an issue to discuss it before starting work.
+Check the [Roadmap](README.md#roadmap) for planned features. If you have a new idea, open an issue with the feature request form to discuss it before starting work.
