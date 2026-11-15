@@ -151,6 +151,90 @@ struct PersistenceManager {
     }
 }
 
+// MARK: - Auto-Paste
+/// Opt-in: after a pick, send ⌘V to the app that was frontmost when the history opened.
+/// Posting the keystroke needs the Accessibility permission, which is only ever asked for
+/// from Settings, never while the setting is off.
+enum AutoPaste {
+    static let enabledDefaultsKey = "autoPasteEnabled"
+    /// How long to wait for the target app to become frontmost before giving up.
+    static let activationTimeout: TimeInterval = 0.5
+    /// Wait between the target being frontmost and posting ⌘V, so its key window is ready.
+    static let keystrokeDelay: TimeInterval = 0.05
+
+    static var hasPermission: Bool { CGPreflightPostEventAccess() }
+
+    @discardableResult
+    static func requestPermission() -> Bool { CGRequestPostEventAccess() }
+
+    /// Activates `targetApp` and pastes into it. Does nothing when there is no live target,
+    /// the target is this app, or the permission is missing.
+    static func paste(into targetApp: NSRunningApplication?) {
+        guard let targetApp,
+              !targetApp.isTerminated,
+              targetApp.bundleIdentifier != Bundle.main.bundleIdentifier,
+              hasPermission else { return }
+
+        let targetProcessIdentifier = targetApp.processIdentifier
+
+        /// Re-checks right before posting, so a target that quit or lost focus during the delay never gets ⌘V.
+        func postCommandVAfterDelay() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + keystrokeDelay) {
+                guard !targetApp.isTerminated,
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier == targetProcessIdentifier else { return }
+                postCommandV()
+            }
+        }
+
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetProcessIdentifier {
+            postCommandVAfterDelay()
+            return
+        }
+
+        let activationState = ActivationState()
+        let timeoutWorkItem = DispatchWorkItem {
+            guard !activationState.finished else { return }
+            activationState.finished = true
+            activationState.removeObserver()
+        }
+        activationState.observer = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            let activatedApp = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard !activationState.finished, activatedApp?.processIdentifier == targetProcessIdentifier else { return }
+            activationState.finished = true
+            timeoutWorkItem.cancel()
+            activationState.removeObserver()
+            postCommandVAfterDelay()
+        }
+        targetApp.activate(options: [])
+        DispatchQueue.main.asyncAfter(deadline: .now() + activationTimeout, execute: timeoutWorkItem)
+    }
+
+    /// Shared by the activation observer and the timeout, both on the main queue: whichever fires first sets `finished`.
+    private final class ActivationState {
+        var finished = false
+        var observer: NSObjectProtocol?
+
+        func removeObserver() {
+            if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+            observer = nil
+        }
+    }
+
+    private static func postCommandV() {
+        let eventSource = CGEventSource(stateID: .combinedSessionState)
+        let keyCode = CGKeyCode(kVK_ANSI_V)
+        for keyIsDown in [true, false] {
+            let keyEvent = CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: keyIsDown)
+            keyEvent?.flags = .maskCommand
+            keyEvent?.post(tap: .cghidEventTap)
+        }
+    }
+}
+
 // MARK: - Clipboard Manager
 class ClipboardManager: ObservableObject {
     @Published var items: [ClipboardItem] = []
@@ -165,6 +249,10 @@ class ClipboardManager: ObservableObject {
         didSet {
             UserDefaults.standard.set(maximumItemSizeInBytes ?? ItemSizeLimit.noLimitStoredValue, forKey: ItemSizeLimit.defaultsKey)
         }
+    }
+    /// When on, picking an item also pastes it into the app that was frontmost when the history opened.
+    @Published var isAutoPasteEnabled: Bool {
+        didSet { UserDefaults.standard.set(isAutoPasteEnabled, forKey: AutoPaste.enabledDefaultsKey) }
     }
     private var timer: Timer?
     private var lastChangeCount = 0
@@ -189,6 +277,7 @@ class ClipboardManager: ObservableObject {
         } else {
             self.maximumItemSizeInBytes = ItemSizeLimit.defaultBytes
         }
+        self.isAutoPasteEnabled = UserDefaults.standard.bool(forKey: AutoPaste.enabledDefaultsKey)
         self.items = PersistenceManager.load()
     }
 
@@ -654,6 +743,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
     @State private var launchAtLoginErrorMessage: String?
+    @State private var hasAutoPastePermission = false
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
     @State private var showSizeTrimConfirmation = false
@@ -768,6 +858,40 @@ struct SettingsView: View {
                         Text(shortcutErrorMessage)
                             .font(.caption)
                             .foregroundColor(.red)
+                    }
+
+                    HStack {
+                        Image(systemName: "doc.on.clipboard.fill")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Toggle("Paste after copying", isOn: Binding(
+                            get: { manager.isAutoPasteEnabled },
+                            set: { setAutoPasteEnabled($0) }
+                        ))
+                            .toggleStyle(.switch)
+                    }
+
+                    if manager.isAutoPasteEnabled {
+                        if hasAutoPastePermission {
+                            Text("Pastes into the app you were using.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Needs Accessibility access to paste. Until then, items are only copied. If this doesn't change after allowing it, quit and reopen ClipboardHistory.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            Button("Open Accessibility Settings") {
+                                if let accessibilitySettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                    NSWorkspace.shared.open(accessibilitySettingsURL)
+                                }
+                                // Get the popover out of the way so System Settings is in front.
+                                DispatchQueue.main.async {
+                                    (NSApp.delegate as? AppDelegate)?.closePopover()
+                                }
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -979,6 +1103,7 @@ struct SettingsView: View {
         .background(SettingsWindowReader { settingsWindow = $0 })
         .onAppear {
             refreshLaunchAtLoginState()
+            refreshAutoPastePermission()
             previousMaximumItemSizeInBytes = manager.maximumItemSizeInBytes
         }
         .onChange(of: manager.maximumItemSizeInBytes) { newLimit in
@@ -987,6 +1112,7 @@ struct SettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshLaunchAtLoginState()
+            refreshAutoPastePermission()
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
             refreshLaunchAtLoginState()
@@ -994,6 +1120,20 @@ struct SettingsView: View {
     }
 
     private static let launchAtLoginApprovalMessage = "Approve ClipboardHistory in System Settings › Login Items."
+
+    private func refreshAutoPastePermission() {
+        guard manager.isAutoPasteEnabled else { return }
+        hasAutoPastePermission = AutoPaste.hasPermission
+    }
+
+    private func setAutoPasteEnabled(_ isEnabled: Bool) {
+        manager.isAutoPasteEnabled = isEnabled
+        guard isEnabled else { return }
+        if !AutoPaste.hasPermission {
+            AutoPaste.requestPermission()
+        }
+        refreshAutoPastePermission()
+    }
 
     private func setLaunchAtLogin(_ isEnabled: Bool) {
         do {
@@ -1255,10 +1395,12 @@ struct HistoryView: View {
         return filteredItems.firstIndex { $0.id == highlightedItemID }
     }
 
-    /// The one copy path: Copy button, row click, Return and ⌘1–⌘9.
+    /// The one copy path: Copy button, row click, Return and ⌘1–⌘9. The copy also pastes when auto-paste is on.
     private func copyAndClose(_ item: ClipboardItem) {
         manager.copyItem(item)
-        (NSApp.delegate as? AppDelegate)?.closePopover()
+        let appDelegate = NSApp.delegate as? AppDelegate
+        appDelegate?.closePopover()
+        appDelegate?.pasteIntoPreviousAppIfEnabled()
     }
 
     /// Every highlight change that isn't hover. Remembering the cursor position lets hover
@@ -1484,6 +1626,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let navigationState = HistoryNavigationState()
     private var outsideClickMonitor: Any?
     private var historyKeyMonitor: Any?
+    private var previousFrontmostApp: NSRunningApplication?
+
+    /// Remembers the app in front before the history takes focus; nil when that is this app or none.
+    private func recordPreviousFrontmostApp() {
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        if let frontmostApp, frontmostApp.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousFrontmostApp = frontmostApp
+        } else {
+            previousFrontmostApp = nil
+        }
+    }
+
+    /// Pastes into the app recorded when the history opened, then forgets it so it is never reused.
+    func pasteIntoPreviousAppIfEnabled() {
+        guard manager.isAutoPasteEnabled else { return }
+        AutoPaste.paste(into: previousFrontmostApp)
+        previousFrontmostApp = nil
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installEditMenu()
@@ -1553,6 +1713,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if popover?.isShown == true {
             closePopover()
         } else {
+            recordPreviousFrontmostApp()
             NSApplication.shared.activate(ignoringOtherApps: true)
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 

@@ -9,6 +9,7 @@ An open-source, lightweight clipboard history manager for macOS (Apple Silicon a
 - **Clipboard History** - Keeps a history of everything you copy (up to 200 items)
 - **Search** - Quickly find items in history
 - **Persistent Storage** - History is saved to disk and survives app restarts
+- **Auto-Paste (opt-in)** - Paste the picked item straight into the app you were using. Needs Accessibility access
 - **Launch at Login** - Option to start automatically when you log in
 - **Ignore Apps** - Choose apps (password managers by default) whose copies are never saved
 - **Size Limit** - Copies over 100 KB aren't saved. You can change the limit or turn it off in Settings. Lowering it offers to delete the saved items over the new limit
@@ -43,11 +44,13 @@ chmod +x build.sh
 cp -r ClipboardHistory.app /Applications/
 ```
 
+If you use Paste after copying, macOS ties its Accessibility permission to the exact build, so every `./build.sh` drops it. After a rebuild, allow ClipboardHistory again in System Settings > Privacy & Security > Accessibility (remove the old entry first if it's still listed), then quit and reopen the app. macOS only picks up the new permission after a relaunch.
+
 ## Usage
 
 1. **Copy** - Use Cmd+C normally to copy any content
 2. **Open History** - Click the clipboard icon in the menu bar
-3. **Paste** - Click "Copy" on any item, or the item itself, to put it back on your clipboard. It moves to the top of the list
+3. **Paste** - Click "Copy" on any item, or the item itself, to put it back on your clipboard. It moves to the top of the list. With Paste after copying on in Settings, picking an item also pastes it
 4. **Search** - Type in the search box to filter items
 5. **Delete** - Click the trash icon to remove individual items
 6. **Settings** - Click the gear icon to configure preferences
@@ -63,6 +66,8 @@ The search box has focus when the history opens, so you can type to filter right
 - **Cmd+1 to Cmd+9** - Copy the item with that number (shown on the first nine rows).
 - **Cmd+Delete** - Delete the highlighted item. This only works after you move into the list with ↑ or ↓. Before that, Cmd+Delete clears the search box as usual.
 - **Esc** - Close the history.
+
+With Paste after copying on in Settings, Return and Cmd+1 to Cmd+9 also paste the item into the app you were using.
 
 ## How It Works
 
@@ -94,13 +99,14 @@ ClipboardHistory/
 - No network requests, no analytics, no telemetry
 - Completely open-source for auditing
 - History stored at `~/Library/Application Support/ClipboardHistory/`
+- Accessibility access is only requested if you turn on Paste after copying, and is used only to send Cmd+V to the app you were using
 
 ## Roadmap
 
 - [x] Global keyboard shortcut (e.g. `Cmd+Shift+V`) to open history
 - [ ] Image and rich text support
 - [x] Keyboard navigation (arrow keys + Enter to copy)
-- [ ] Auto-paste into the previous app (opt-in)
+- [x] Auto-paste into the previous app (opt-in)
 - [ ] Configurable history expiration
 - [ ] Homebrew cask for easy installation
 - [ ] Code snippets support with syntax highlighting
