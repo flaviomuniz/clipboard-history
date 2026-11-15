@@ -48,7 +48,7 @@ cp -r ClipboardHistory.app /Applications/
 
 1. **Copy** - Use Cmd+C normally to copy any content
 2. **Open History** - Click the clipboard icon in the menu bar
-3. **Paste** - Click "Copy" on any item, or the item itself, to put it back on your clipboard. It moves to the top of the list. With **Paste after copying** on in Settings, picking an item also pastes it
+3. **Paste** - Click "Copy" on any item, or the item itself, to put it back on your clipboard. It moves to the top of the list. With Paste after copying on in Settings, picking an item also pastes it
 4. **Search** - Type in the search box to filter items
 5. **Delete** - Click the trash icon to remove individual items
 6. **Settings** - Click the gear icon to configure preferences
@@ -60,7 +60,7 @@ You can also press Cmd+Shift+V in any app to open or close the history. While Cl
 The search box has focus when the history opens, so you can type to filter right away.
 
 - **↑ / ↓** - Move the highlight. Nothing is highlighted when the history opens, so the first ↑ or ↓ highlights the first item.
-- **Return** - Copy the highlighted item and close the history. Then paste with Cmd+V, or turn on Paste after copying in Settings to paste automatically.
+- **Return** - Copy the highlighted item and close the history. Then paste with Cmd+V.
 - **Cmd+1 to Cmd+9** - Copy the item with that number (shown on the first nine rows).
 - **Cmd+Delete** - Delete the highlighted item. This only works after you move into the list with ↑ or ↓. Before that, Cmd+Delete clears the search box as usual.
 - **Esc** - Close the history.
