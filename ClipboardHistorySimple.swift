@@ -743,6 +743,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
     @State private var launchAtLoginErrorMessage: String?
+    @State private var hasAutoPastePermission = false
     @State private var showClearConfirmation = false
     @State private var showPurgeConfirmation = false
     @State private var showSizeTrimConfirmation = false
@@ -857,6 +858,40 @@ struct SettingsView: View {
                         Text(shortcutErrorMessage)
                             .font(.caption)
                             .foregroundColor(.red)
+                    }
+
+                    HStack {
+                        Image(systemName: "doc.on.clipboard.fill")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                        Toggle("Paste after copying", isOn: Binding(
+                            get: { manager.isAutoPasteEnabled },
+                            set: { setAutoPasteEnabled($0) }
+                        ))
+                            .toggleStyle(.switch)
+                    }
+
+                    if manager.isAutoPasteEnabled {
+                        if hasAutoPastePermission {
+                            Text("Pastes into the app you were using.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Needs Accessibility access to paste. Until then, items are only copied. If this doesn't change after allowing it, quit and reopen ClipboardHistory.")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            Button("Open Accessibility Settings") {
+                                if let accessibilitySettingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                    NSWorkspace.shared.open(accessibilitySettingsURL)
+                                }
+                                // Get the popover out of the way so System Settings is in front.
+                                DispatchQueue.main.async {
+                                    (NSApp.delegate as? AppDelegate)?.closePopover()
+                                }
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
                     }
                 }
                 .padding(.horizontal)
@@ -1068,6 +1103,7 @@ struct SettingsView: View {
         .background(SettingsWindowReader { settingsWindow = $0 })
         .onAppear {
             refreshLaunchAtLoginState()
+            refreshAutoPastePermission()
             previousMaximumItemSizeInBytes = manager.maximumItemSizeInBytes
         }
         .onChange(of: manager.maximumItemSizeInBytes) { newLimit in
@@ -1076,6 +1112,7 @@ struct SettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             refreshLaunchAtLoginState()
+            refreshAutoPastePermission()
         }
         .onReceive(NotificationCenter.default.publisher(for: .clipboardPopoverDidOpen)) { _ in
             refreshLaunchAtLoginState()
@@ -1083,6 +1120,20 @@ struct SettingsView: View {
     }
 
     private static let launchAtLoginApprovalMessage = "Approve ClipboardHistory in System Settings › Login Items."
+
+    private func refreshAutoPastePermission() {
+        guard manager.isAutoPasteEnabled else { return }
+        hasAutoPastePermission = AutoPaste.hasPermission
+    }
+
+    private func setAutoPasteEnabled(_ isEnabled: Bool) {
+        manager.isAutoPasteEnabled = isEnabled
+        guard isEnabled else { return }
+        if !AutoPaste.hasPermission {
+            AutoPaste.requestPermission()
+        }
+        refreshAutoPastePermission()
+    }
 
     private func setLaunchAtLogin(_ isEnabled: Bool) {
         do {
