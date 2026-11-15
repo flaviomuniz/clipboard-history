@@ -44,6 +44,8 @@ chmod +x build.sh
 cp -r ClipboardHistory.app /Applications/
 ```
 
+If you use Paste after copying, macOS ties its Accessibility permission to the exact build, so every `./build.sh` drops it. After a rebuild, allow ClipboardHistory again in System Settings > Privacy & Security > Accessibility (remove the old entry first if it's still listed), then quit and reopen the app. macOS only picks up the new permission after a relaunch.
+
 ## Usage
 
 1. **Copy** - Use Cmd+C normally to copy any content
