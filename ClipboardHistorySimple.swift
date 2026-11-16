@@ -239,7 +239,11 @@ enum AutoPaste {
 class ClipboardManager: ObservableObject {
     @Published var items: [ClipboardItem] = []
     @Published var historyLimit: Int {
-        didSet { UserDefaults.standard.set(historyLimit, forKey: "historyLimit") }
+        didSet {
+            UserDefaults.standard.set(historyLimit, forKey: "historyLimit")
+            // Lowering the limit drops the oldest items now, not on the next copy.
+            if trimItemsToHistoryLimit() { PersistenceManager.save(items) }
+        }
     }
     @Published var ignoredAppBundleIDs: [String] {
         didSet { UserDefaults.standard.set(ignoredAppBundleIDs, forKey: Privacy.ignoredAppsDefaultsKey) }
@@ -339,9 +343,7 @@ class ClipboardManager: ObservableObject {
             // The timer runs on the main run loop; mutate synchronously so copies from the list and polled copies stay in order.
             items.removeAll { $0.content == item.content }
             items.insert(item, at: 0)
-            if items.count > historyLimit {
-                items = Array(items.prefix(historyLimit))
-            }
+            trimItemsToHistoryLimit()
             PersistenceManager.save(items)
         }
     }
@@ -362,6 +364,14 @@ class ClipboardManager: ObservableObject {
     func deleteItem(_ item: ClipboardItem) {
         items.removeAll { $0.id == item.id }
         PersistenceManager.save(items)
+    }
+
+    /// Keeps the newest `historyLimit` items. Returns true when any were dropped.
+    @discardableResult
+    private func trimItemsToHistoryLimit() -> Bool {
+        guard items.count > historyLimit else { return false }
+        items = Array(items.prefix(historyLimit))
+        return true
     }
 
     func clearAll() {
