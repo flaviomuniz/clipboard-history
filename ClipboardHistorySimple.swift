@@ -1636,6 +1636,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let navigationState = HistoryNavigationState()
     private var outsideClickMonitor: Any?
     private var historyKeyMonitor: Any?
+    /// True between popoverWillClose and popoverDidClose. A click on the menu bar icon starts the
+    /// `.transient` close on mouse-down, and the button action only runs on mouse-up, mid-animation.
+    private var isPopoverClosing = false
     private var previousFrontmostApp: NSRunningApplication?
 
     /// Remembers the app in front before the history takes focus; nil when that is this app or none.
@@ -1712,6 +1715,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func togglePopover() {
         guard let button = statusItem?.button else { return }
+
+        // The click that started this close also triggers this action; let the close finish.
+        if isPopoverClosing { return }
 
         if popover?.isShown == true, !NSApp.isActive {
             // Left open behind another app (e.g. by an attached sheet): bring it forward instead of closing.
@@ -1852,12 +1858,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSPopoverDelegate {
+    func popoverWillShow(_ notification: Notification) {
+        isPopoverClosing = false
+    }
+
     func popoverDidShow(_ notification: Notification) {
         startOutsideClickMonitor()
         startHistoryKeyMonitor()
     }
 
+    func popoverWillClose(_ notification: Notification) {
+        isPopoverClosing = true
+    }
+
     func popoverDidClose(_ notification: Notification) {
+        isPopoverClosing = false
         stopOutsideClickMonitor()
         stopHistoryKeyMonitor()
     }
